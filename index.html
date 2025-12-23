@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Me Inc. 個人股價</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#0d1117">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(reg => console.log('SW registered'))
+                    .catch(err => console.log('SW failed', err));
+            });
+        }
+    </script>
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Start View (Dashboard) -->
+        <div id="startView" class="view active">
+            <header class="header">
+                <div class="logo">Me Inc.</div>
+                <div class="current-price-container">
+                    <span class="price-label">當前股價</span>
+                    <h1 id="currentPrice" class="price-value">100.00</h1>
+                    <span id="priceChange" class="price-change">+0.00%</span>
+                </div>
+
+                <!-- Search Bar -->
+                <div class="search-container"
+                    style="margin-top: 16px; display: flex; justify-content: center; gap: 8px;">
+                    <input type="date" id="searchDateInput" style="padding: 8px; width: auto;">
+                    <button id="searchBtn" class="btn-primary" style="padding: 8px 16px; font-size: 0.9rem;">搜尋</button>
+                </div>
+            </header>
+
+            <main class="dashboard-content">
+                <!-- Charts Section -->
+                <section class="charts-section">
+                    <div class="chart-container line-chart">
+                        <canvas id="mainChart"></canvas>
+                    </div>
+                    <div class="chart-container kline-chart" style="margin-top: 12px; height: 200px;">
+                        <canvas id="kLineChart"></canvas>
+                    </div>
+
+                    <!-- Gantt Chart Section -->
+                    <div class="chart-container gantt-chart" style="margin-top: 12px; height: 150px;">
+                        <canvas id="ganttChart"></canvas>
+                    </div>
+
+                    <!-- Tasks Section (3 Columns) -->
+                    <section class="tasks-section" style="margin-top: 20px;">
+                        <!-- 1. Daily Routine (Left) -->
+                        <div class="tasks-column">
+                            <div class="column-header">
+                                <h2>日常任務</h2>
+                            </div>
+                            <div id="dailyRoutineList" class="task-list">
+                                <!-- JS Injected -->
+                            </div>
+                        </div>
+
+                        <!-- 2. All Schedule (Middle) -->
+                        <div class="tasks-column">
+                            <div class="column-header">
+                                <h2>全部行程</h2>
+                            </div>
+                            <div id="allTaskList" class="task-list">
+                                <!-- JS Injected -->
+                            </div>
+                        </div>
+
+                        <!-- 3. Important Matters (Right) -->
+                        <div class="tasks-column tasks-important">
+                            <div class="column-header warning-header">
+                                <h2>重要事項</h2>
+                            </div>
+                            <div id="importantTaskList" class="task-list">
+                                <!-- JS Injected -->
+                            </div>
+                        </div>
+                    </section>
+
+                    <nav class="main-nav">
+                        <button id="navAddBtn" class="nav-btn btn-primary">新增選項</button>
+                        <button id="navScheduleBtn" class="nav-btn btn-secondary">每日行程</button>
+                    </nav>
+            </main>
+        </div>
+
+        <!-- Add Option View -->
+        <div id="addView" class="view hidden">
+            <header class="header">
+                <h2>新增選項</h2>
+            </header>
+            <main class="form-content">
+                <form id="addOptionForm">
+                    <div class="form-group">
+                        <label for="taskName">事項名稱</label>
+                        <input type="text" id="taskName" required placeholder="例如：閱讀書籍">
+                    </div>
+
+                    <div class="form-group">
+                        <label>事項是否重複</label>
+                        <div class="radio-group">
+                            <label><input type="radio" name="isRecurring" value="yes"> 是</label>
+                            <label><input type="radio" name="isRecurring" value="no" checked>
+                                否</label>
+                        </div>
+                    </div>
+
+                    <!-- Time Input -->
+                    <div class="form-group">
+                        <label>時間設定</label>
+                        <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 8px;">
+                            <label style="margin:0; font-size: 0.9rem;"><input type="checkbox" id="isTimeRange">
+                                設定時間範圍</label>
+                        </div>
+                        <div style="display: flex; gap: 8px;">
+                            <div style="flex:1;">
+                                <label for="taskTime" style="font-size: 0.8rem; margin-bottom: 4px;">開始時間</label>
+                                <input type="time" id="taskTime" placeholder="開始時間">
+                            </div>
+                            <div id="endTimeGroup" style="flex:1;" class="hidden">
+                                <label for="taskEndTime" style="font-size: 0.8rem; margin-bottom: 4px;">結束時間</label>
+                                <input type="time" id="taskEndTime" placeholder="結束時間">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Dynamic Recurring Options -->
+                    <div id="recurringOptions" class="dynamic-group hidden">
+                        <div class="form-group">
+                            <label>重複設定</label>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span>每</span>
+                                <input type="number" id="recurrenceInterval" value="1" min="1"
+                                    style="width: 60px; padding: 8px;">
+                                <select id="recurrenceType" style="flex: 1;">
+                                    <option value="daily">日</option>
+                                    <option value="weekly">週</option>
+                                    <option value="monthly">月</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>開始日期</label>
+                            <input type="date" id="recurrenceStartDate">
+                        </div>
+                    </div>
+
+                    <!-- Dynamic Date Options -->
+                    <div id="dateOptions" class="dynamic-group">
+                        <div class="form-group">
+                            <label>指定日期</label>
+                            <input type="date" id="taskDate">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="importance">重要程度</label>
+                        <select id="importance">
+                            <option value="critical">重要</option>
+                            <option value="high">還好</option>
+                            <option value="medium">輕微</option>
+                            <option value="low">不重要</option>
+                            <option value="daily">日常</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="score">分數 (正負皆可)</label>
+                        <input type="number" id="score" required placeholder="例如：5 或 -5">
+                    </div>
+
+                    <div class="form-actions-page">
+                        <button type="submit" class="btn-confirm">確認</button>
+                        <button type="button" id="cancelAddBtn" class="btn-cancel">取消</button>
+                        <button type="button" id="backFromAddBtn" class="btn-back">上一頁</button>
+                    </div>
+                </form>
+            </main>
+        </div>
+
+        <!-- Schedule View -->
+        <div id="scheduleView" class="view hidden">
+            <header class="header">
+                <h2>每日行程</h2>
+            </header>
+            <main class="schedule-content">
+                <section class="calendar-section"
+                    style="background: var(--card-bg); border-radius: 12px; padding: 12px; border: 1px solid var(--border-color);">
+                    <div class="calendar-header">
+                        <button id="prevMonthBtn">&lt;</button>
+                        <h3 id="currentMonthLabel" style="font-size: 1rem; font-weight: 600;">
+                            December 2025</h3>
+                        <button id="nextMonthBtn">&gt;</button>
+                    </div>
+                    <div id="calendarGrid" class="calendar-grid">
+                        <!-- Calendar injected via JS -->
+                    </div>
+                </section>
+                <button id="backFromScheduleBtn" class="btn-back full-width">上一頁</button>
+            </main>
+        </div>
+
+        <!-- Detail Modal (Global) -->
+        <div id="detailModal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="detailDateLabel">行程細節</h3>
+                    <button id="closeDetailBtn" class="close-btn">&times;</button>
+                </div>
+                <div id="detailList" class="detail-list">
+                    <!-- Injected via JS -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Delete Choice Modal -->
+        <div id="deleteModal" class="modal hidden" style="z-index: 2000;">
+            <div class="modal-content" style="max-width: 300px; text-align: center;">
+                <h3 style="margin-bottom: 16px;">取消行程</h3>
+                <p style="margin-bottom: 20px;">請選擇取消方式：</p>
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <button id="btnDeleteSingle" class="btn-primary" style="background: #f59e0b;">單獨取消 (僅今日)</button>
+                    <button id="btnDeleteAll" class="btn-primary" style="background: #ef4444;">全部取消 (含未來)</button>
+                    <button id="btnCancelDelete" class="btn-cancel">保留行程</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Edit Modal -->
+        <div id="editModal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>編輯行程</h3>
+                    <button id="closeEditBtn" class="close-btn">&times;</button>
+                </div>
+                <form id="editForm" style="display: flex; flex-direction: column; gap: 12px; margin-top: 10px;">
+                    <input type="hidden" id="editTaskId">
+                    <input type="hidden" id="editOriginalDate">
+
+                    <div class="form-group">
+                        <label for="editName">名稱</label>
+                        <input type="text" id="editName" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="editTaskDate">日期</label>
+                        <input type="date" id="editTaskDate" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label>時間</label>
+                        <div style="display: flex; gap: 8px;">
+                            <div style="flex:1;">
+                                <label for="editTime" style="font-size: 0.8rem; margin-bottom: 4px;">開始</label>
+                                <input type="time" id="editTime">
+                            </div>
+                            <div style="flex:1;">
+                                <label for="editEndTime" style="font-size: 0.8rem; margin-bottom: 4px;">結束 (可選)</label>
+                                <input type="time" id="editEndTime">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-actions-page" style="margin-top: 10px;">
+                        <button type="submit" class="btn-confirm">儲存變更</button>
+                        <button type="button" id="cancelEditBtn" class="btn-cancel">取消</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Edit Scope Modal (Recurring) -->
+        <div id="editScopeModal" class="modal hidden" style="z-index: 2000;">
+            <div class="modal-content" style="max-width: 300px; text-align: center;">
+                <h3 style="margin-bottom: 16px;">編輯重複行程</h3>
+                <p style="margin-bottom: 20px;">您要更改哪一部分？</p>
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <button id="btnEditSingle" class="btn-primary" style="background: #f59e0b;">僅此項目 (今日)</button>
+                    <button id="btnEditFuture" class="btn-primary">此項目與之後 (未來)</button>
+                    <button id="btnCancelEditScope" class="btn-cancel">取消</button>
+                </div>
+            </div>
+        </div>
+
+        <script src="app.js"></script>
+</body>
+
+</html>
