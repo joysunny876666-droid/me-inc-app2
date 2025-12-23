@@ -1,26 +1,31 @@
 // --- State Management ---
 const defaultState = {
     stockPrice: 100.00,
-    history: [], // { date: 'YYYY-MM-DD', price: number }
-    tasks: []
-    // Task Structure:
-    // {
-    //   id: number,
-    //   name: string,
-    //   type: 'recurring' | 'scheduled',
-    //   recurrence: { type: 'daily' | 'weekly' | 'monthly', endDate?: 'YYYY-MM-DD' },
-    //   date: 'YYYY-MM-DD', // if scheduled
-    //   importance: 'critical' | 'high' | 'medium' | 'low' | 'daily',
-    //   score: number,
-    //   completedHistory: { 'YYYY-MM-DD': boolean }
-    // }
+    history: [],
+    tasks: [],
+    lastLoginDate: ''
 };
 
-let state = JSON.parse(localStorage.getItem('meIncState')) || defaultState;
+// Initial state (will be overwritten by Cloud data)
+let state = defaultState;
 let currentView = 'start';
 let currentMonth = new Date();
 let chartInstance = null;
 let kLineChartInstance = null;
+
+// --- Firebase Initialization ---
+const firebaseConfig = {
+    apiKey: "AIzaSyAa0xcoNbVHc_bzAI53WK2XbU41xJJP4q0",
+    authDomain: "me-inc-db.firebaseapp.com",
+    projectId: "me-inc-db",
+    storageBucket: "me-inc-db.firebasestorage.app",
+    messagingSenderId: "598336717364",
+    appId: "1:598336717364:web:a56fa398689fedf2fec061",
+    measurementId: "G-707RMW9027"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
 
 // --- Helper: Local Date String (YYYY-MM-DD) ---
 function getLocalDateStr(dateObj = new Date()) {
@@ -30,7 +35,6 @@ function getLocalDateStr(dateObj = new Date()) {
     return `${year}-${month}-${day}`;
 }
 
-// --- DOM Elements ---
 // --- DOM Elements ---
 const els = {
     views: {
@@ -100,7 +104,7 @@ const els = {
         form: document.getElementById('editForm'),
         name: document.getElementById('editName'),
         time: document.getElementById('editTime'),
-        endTime: document.getElementById('editEndTime'), // New
+        endTime: document.getElementById('editEndTime'),
         taskId: document.getElementById('editTaskId'),
         taskDate: document.getElementById('editTaskDate'),
         originalDate: document.getElementById('editOriginalDate'),
@@ -120,22 +124,47 @@ function init() {
     setupEventListeners();
     setupEditListeners();
 
-    // Check Penalties
-    checkDailyPenaltiesOnLoad();
-    setInterval(checkImmediatePenalties, 60000);
-    checkImmediatePenalties();
-
     // Auto-refresh Time Table (every minute)
     setInterval(() => {
         if (currentView === 'start') renderStartPage();
     }, 60000);
 
-    saveState();
-    renderView('start');
+    // Check immediate penalties every minute
+    setInterval(checkImmediatePenalties, 60000);
+
+    // Start Cloud Sync
+    setupCloudSync();
+}
+
+function setupCloudSync() {
+    // Listen to changes in 'state' document
+    db.collection('data').doc('state').onSnapshot((doc) => {
+        if (doc.exists) {
+            console.log("Cloud data received");
+            const cloudData = doc.data();
+            // Merge with default to ensure structure
+            state = { ...defaultState, ...cloudData };
+        } else {
+            console.log("No cloud data, creating initial...");
+            // New user or cleared DB, save default
+            saveState();
+        }
+
+        // After data updates, check logic and render
+        checkDailyPenaltiesOnLoad();
+        checkImmediatePenalties();
+        renderView(currentView || 'start');
+    }, (error) => {
+        console.error("Sync error:", error);
+        alert("連線資料庫失敗，請檢查網路或是 API 金鑰。目前使用離線模式。");
+    });
 }
 
 function saveState() {
-    localStorage.setItem('meIncState', JSON.stringify(state));
+    // Save to Firestore
+    db.collection('data').doc('state').set(state)
+        .then(() => console.log("State saved to Cloud"))
+        .catch((e) => console.error("Save failed", e));
 }
 
 function setupEventListeners() {
