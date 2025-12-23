@@ -1152,6 +1152,8 @@ function finishEdit() {
     // Refresh (Check original date to update list where we clicked)
     const newTasks = getTasksForDate(editOriginalDateVal);
     showDetailModal(editOriginalDateVal, newTasks);
+
+    // Refresh Calendar Indicators
     renderCalendar(currentMonth);
     renderStartPage();
 
