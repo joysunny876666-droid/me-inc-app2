@@ -40,7 +40,8 @@ const els = {
     views: {
         start: document.getElementById('startView'),
         add: document.getElementById('addView'),
-        schedule: document.getElementById('scheduleView')
+        schedule: document.getElementById('scheduleView'),
+        focusedGantt: document.getElementById('focusedGanttView')
     },
     nav: {
         addBtn: document.getElementById('navAddBtn'),
@@ -48,7 +49,8 @@ const els = {
     },
     backBtns: {
         fromAdd: document.getElementById('backFromAddBtn'),
-        fromSchedule: document.getElementById('backFromScheduleBtn')
+        fromSchedule: document.getElementById('backFromScheduleBtn'),
+        fromGantt: document.getElementById('backFromGanttBtn')
     },
     dashboard: {
         price: document.getElementById('currentPrice'),
@@ -57,7 +59,8 @@ const els = {
         allList: document.getElementById('allTaskList'),
         importantList: document.getElementById('importantTaskList'),
         searchInput: document.getElementById('searchDateInput'),
-        searchBtn: document.getElementById('searchBtn')
+        searchBtn: document.getElementById('searchBtn'),
+        focusedList: document.getElementById('focusedGanttList') // New List
     },
     calendar: {
         label: document.getElementById('currentMonthLabel'),
@@ -184,7 +187,16 @@ function setupEventListeners() {
     }
 
     if (els.backBtns.fromAdd) els.backBtns.fromAdd.onclick = () => renderView('start');
+    if (els.backBtns.fromAdd) els.backBtns.fromAdd.onclick = () => renderView('start');
     if (els.backBtns.fromSchedule) els.backBtns.fromSchedule.onclick = () => renderView('start');
+    if (els.backBtns.fromGantt) els.backBtns.fromGantt.onclick = () => renderView('start');
+
+    // Chart Click Navigation
+    const ctxGantt = document.getElementById('ganttChart');
+    if (ctxGantt) {
+        ctxGantt.onclick = () => renderView('focusedGantt');
+    }
+
 
     // Add Form Toggles
     els.addForm.inputs.isRecurringRadios.forEach(radio => {
@@ -326,7 +338,71 @@ function renderView(viewName) {
     if (els.views[viewName]) els.views[viewName].classList.remove('hidden');
     if (viewName === 'start') renderStartPage();
     if (viewName === 'schedule') renderCalendar(currentMonth);
+    if (viewName === 'focusedGantt') renderFocusedGantt();
 }
+
+function renderFocusedGantt() {
+    const todayStr = getLocalDateStr();
+    const tasks = getTasksForDate(todayStr); // All today's tasks
+    // Filter only ranged tasks
+    const rangedTasks = tasks.filter(t => t.time && t.endTime);
+
+    // Sort by time
+    rangedTasks.sort((a, b) => a.time.localeCompare(b.time));
+
+    const container = els.dashboard.focusedList;
+    if (!container) return;
+    container.innerHTML = '';
+
+    if (rangedTasks.length === 0) {
+        container.innerHTML = '<p style="text-align:center; color:gray; padding:20px;">今日無時段行程</p>';
+        return;
+    }
+
+    const timeToPercent = (timeStr) => {
+        const [h, m] = timeStr.split(':').map(Number);
+        const totalMin = h * 60 + m;
+        return (totalMin / (24 * 60)) * 100;
+    };
+
+    rangedTasks.forEach(task => {
+        const startP = timeToPercent(task.time);
+        const endP = timeToPercent(task.endTime);
+        const widthP = endP - startP;
+
+        const el = document.createElement('div');
+        el.className = 'focused-task-row';
+
+        const isCompleted = task.completedHistory && task.completedHistory[todayStr];
+
+        el.innerHTML = `
+            <div class="focused-task-left">
+                <input type="checkbox" class="task-checkbox" ${isCompleted ? 'checked' : ''}>
+                <div class="task-info">
+                    <span class="task-name" style="${isCompleted ? 'text-decoration: line-through; opacity: 0.5;' : ''}">${task.name}</span>
+                    <span class="task-meta">${task.time} - ${task.endTime}</span>
+                </div>
+            </div>
+            <div class="focused-task-right">
+                <div class="time-grid-line" style="left:0%"></div>
+                <div class="time-grid-line" style="left:25%"></div> <!-- 06:00 -->
+                <div class="time-grid-line" style="left:50%"></div> <!-- 12:00 -->
+                <div class="time-grid-line" style="left:75%"></div> <!-- 18:00 -->
+                <div class="time-bar" style="left:${startP}%; width:${widthP}%; background-color: ${isCompleted ? 'var(--accent-green)' : 'var(--accent-blue)'};"></div>
+            </div>
+        `;
+
+        const checkbox = el.querySelector('.task-checkbox');
+        checkbox.onchange = () => {
+            // Reuse toggleTask logic but refresh current view
+            toggleTask(task.id, todayStr, checkbox.checked);
+            renderFocusedGantt(); // Re-render to update bar color etc
+        };
+
+        container.appendChild(el);
+    });
+}
+
 
 function renderStartPage() {
     const todayStr = getLocalDateStr();
