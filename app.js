@@ -321,6 +321,7 @@ function checkImmediatePenalties() {
 
 // --- View Rendering ---
 function renderView(viewName) {
+    currentView = viewName; // Update global state
     Object.values(els.views).forEach(v => { if (v) v.classList.add('hidden'); });
     if (els.views[viewName]) els.views[viewName].classList.remove('hidden');
     if (viewName === 'start') renderStartPage();
