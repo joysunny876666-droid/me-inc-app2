@@ -911,10 +911,12 @@ function showDetailModal(dateStr, tasks) {
             const div = document.createElement('div');
             div.className = 'task-item';
             div.style.justifyContent = 'space-between';
-            const timeStr = task.time ? (task.endTime ? `${task.time}-${task.endTime} ` : `${task.time} `) : '';
+            const timeStr = task.time ? (task.endTime ? `${task.time} - ${task.endTime}` : task.time) : '';
+            const timeDisplay = timeStr ? `<span style="margin-right:8px; color:#aaa; font-size:0.9rem; font-family:monospace;">${timeStr}</span>` : '';
+
             div.innerHTML = `
                 <div class="task-info">
-                    <span class="task-name">${timeStr}${task.name}</span>
+                    <span class="task-name">${timeDisplay}${task.name}</span>
                     <div class="task-meta">${mapImportance(task.importance)} | ${task.score}</div>
                 </div>
                 <div style="display:flex; gap:4px;">
