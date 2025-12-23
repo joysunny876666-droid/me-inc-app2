@@ -164,7 +164,10 @@ function saveState() {
     // Save to Firestore
     db.collection('data').doc('state').set(state)
         .then(() => console.log("State saved to Cloud"))
-        .catch((e) => console.error("Save failed", e));
+        .catch((e) => {
+            console.error("Save failed", e);
+            alert("儲存失敗！請檢查 Firebase 權限設定 (Rules) 是否已開啟測試模式。\n錯誤訊息: " + e.message);
+        });
 }
 
 function setupEventListeners() {
