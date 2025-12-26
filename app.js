@@ -41,7 +41,8 @@ const els = {
         start: document.getElementById('startView'),
         add: document.getElementById('addView'),
         schedule: document.getElementById('scheduleView'),
-        focusedGantt: document.getElementById('focusedGanttView')
+        focusedGantt: document.getElementById('focusedGanttView'),
+        data: document.getElementById('dataView')
     },
     nav: {
         addBtn: document.getElementById('navAddBtn'),
@@ -123,11 +124,12 @@ const els = {
     data: {
         view: document.getElementById('dataView'),
         navBtn: document.getElementById('navDataBtn'),
-        backBtn: document.getElementById('backFromDataBtn'),
+        headerBackBtn: document.getElementById('backFromDataBtn'),
+        bottomBackBtn: document.getElementById('bottomBackFromDataBtn'),
         dateLabel: document.getElementById('dataDateLabel'),
         totalChange: document.getElementById('dataTotalChange'),
-        list: document.getElementById('dataList')
-    }
+        tableContainer: document.getElementById('dataTableContainer')
+    },
 };
 
 // --- Initialization ---
@@ -197,7 +199,8 @@ function setupEventListeners() {
     if (els.backBtns.fromAdd) els.backBtns.fromAdd.onclick = () => renderView('start');
     if (els.backBtns.fromSchedule) els.backBtns.fromSchedule.onclick = () => renderView('start');
     if (els.backBtns.fromGantt) els.backBtns.fromGantt.onclick = () => renderView('start');
-    if (els.data.backBtn) els.data.backBtn.onclick = () => renderView('start');
+    if (els.data.headerBackBtn) els.data.headerBackBtn.onclick = () => renderView('start');
+    if (els.data.bottomBackBtn) els.data.bottomBackBtn.onclick = () => renderView('start');
     if (els.data.navBtn) els.data.navBtn.onclick = () => renderView('data');
 
     // Chart Click Navigation
@@ -361,28 +364,61 @@ function renderDataView() {
     const tasks = getTasksForDate(yesterdayStr);
     let totalChange = 0;
 
-    if (els.data.list) {
-        els.data.list.innerHTML = '';
-        if (tasks.length === 0) {
-            els.data.list.innerHTML = '<p style="text-align:center; color:gray; padding:20px;">昨日無行程</p>';
-        } else {
-            tasks.forEach(task => {
-                const isCompleted = task.completedHistory && task.completedHistory[yesterdayStr];
-                if (isCompleted) {
-                    totalChange += task.score;
-                }
-                const taskEl = createTaskEl(task, yesterdayStr, false);
-                // Disable checkbox in data view as it's past
-                const checkbox = taskEl.querySelector('.task-checkbox');
-                if (checkbox) checkbox.disabled = true;
-                els.data.list.appendChild(taskEl);
-            });
-        }
-    }
+    tasks.forEach(task => {
+        const isCompleted = task.completedHistory && task.completedHistory[yesterdayStr];
+        const isPenalized = task.penaltyHistory && task.penaltyHistory[yesterdayStr];
+        if (isCompleted) totalChange += task.score;
+        else if (isPenalized) totalChange -= task.score;
+    });
 
     if (els.data.totalChange) {
         els.data.totalChange.textContent = `${totalChange >= 0 ? '+' : ''}${totalChange.toFixed(2)}`;
         els.data.totalChange.className = `price-value ${totalChange >= 0 ? 'price-up' : 'price-down'}`;
+    }
+
+    if (els.data.tableContainer) {
+        els.data.tableContainer.innerHTML = '';
+        const table = document.createElement('table');
+        table.className = 'data-table';
+        table.innerHTML = `
+            <thead>
+                <tr>
+                    <th>項目</th>
+                    <th style="text-align:center;">得分異動</th>
+                    <th style="text-align:right;">狀態</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${tasks.map(task => {
+            const isCompleted = task.completedHistory && task.completedHistory[yesterdayStr];
+            const isPenalized = task.penaltyHistory && task.penaltyHistory[yesterdayStr];
+
+            let scoreDisplay = '0';
+            let statusText = '執行中';
+            let statusClass = 'status-info';
+
+            if (isCompleted) {
+                scoreDisplay = `${task.score >= 0 ? '+' : ''}${task.score}`;
+                statusText = '已完成';
+                statusClass = 'status-success';
+            } else if (isPenalized) {
+                // If it was penalized, the score was subtracted
+                scoreDisplay = `-${task.score}`;
+                statusText = '自動扣分';
+                statusClass = 'status-warning';
+            }
+
+            return `
+                        <tr>
+                            <td>${task.name}</td>
+                            <td style="text-align:center; font-family:monospace; font-weight:600; color:${isPenalized ? 'var(--accent-red)' : (isCompleted ? 'var(--accent-green)' : 'inherit')}">${scoreDisplay}</td>
+                            <td style="text-align:right;"><span class="status-badge ${statusClass}">${statusText}</span></td>
+                        </tr>
+                    `;
+        }).join('')}
+            </tbody>
+        `;
+        els.data.tableContainer.appendChild(table);
     }
 }
 
@@ -521,6 +557,18 @@ function getTasksForDate(dateStr) {
         if (task.exceptions && task.exceptions.includes(dateStr)) return false;
         const taskStartDate = task.date || (task.createdAt ? task.createdAt.split('T')[0] : '1970-01-01');
         if (dateStr < taskStartDate) return false;
+
+        // Is it completed BEFORE this date?
+        const completedDates = task.completedHistory ? Object.keys(task.completedHistory).filter(d => task.completedHistory[d]) : [];
+        const firstCompletionDate = completedDates.length > 0 ? completedDates.sort()[0] : null;
+
+        if (task.isMission) {
+            // Mission tasks appear until they are completed
+            // If they are NOT completed yet, or were completed ON this date, they appear.
+            // If they were completed BEFORE this date, they stop appearing.
+            if (firstCompletionDate && firstCompletionDate < dateStr) return false;
+            return true;
+        }
 
         if (task.type === 'scheduled') {
             return task.date === dateStr;
@@ -912,6 +960,7 @@ function handleAddSubmit(e) {
 
     const importance = els.addForm.inputs.importance.value;
     const score = parseFloat(els.addForm.inputs.score.value);
+    const isMission = els.addForm.inputs.isMission && els.addForm.inputs.isMission.checked;
 
     // Validation
     if (!name) return alert('請輸入名稱');
@@ -925,6 +974,7 @@ function handleAddSubmit(e) {
         createdAt: isRecurring ? (recurrenceStartDate || todayStr) : date,
         name,
         type: isRecurring ? 'recurring' : 'scheduled',
+        isMission: isMission || false,
         recurrence: isRecurring ? {
             type: recurrenceType,
             interval: recurrenceInterval,
