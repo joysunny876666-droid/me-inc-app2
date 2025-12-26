@@ -512,8 +512,8 @@ function renderStartPage() {
     // Ranged Tasks -> Gantt Chart (Not in List)
     // Point Tasks (No end time) -> List
 
-    // 1. Daily Routine (Recurring Today, No Range)
-    const dailyRoutineTasks = todaysTasks.filter(t => t.type === 'recurring' && !t.endTime);
+    // 1. Daily Routine (Recurring Today)
+    const dailyRoutineTasks = todaysTasks.filter(t => t.type === 'recurring');
     dailyRoutineTasks.sort(timeSort);
 
     if (els.dashboard.dailyList) {
@@ -521,17 +521,16 @@ function renderStartPage() {
         dailyRoutineTasks.forEach(task => els.dashboard.dailyList.appendChild(createTaskEl(task, todayStr, false)));
     }
 
-    // 2. All Schedule (All Today, No Range)
-    const allPointTasks = todaysTasks.filter(t => !t.endTime);
+    // 2. All Schedule (All Today)
+    const allPointTasks = todaysTasks;
     allPointTasks.sort(timeSort);
     if (els.dashboard.allList) {
         els.dashboard.allList.innerHTML = '';
         allPointTasks.forEach(task => els.dashboard.allList.appendChild(createTaskEl(task, todayStr, false)));
     }
 
-    // 3. Important (Critical Global, No Range)
-    // Note: If a critical task is Ranged, it will appear in Gantt. We assume lists only show point tasks.
-    const criticalTasks = state.tasks.filter(t => t.importance === 'critical' && !t.endTime);
+    // 3. Important (Critical Global)
+    const criticalTasks = state.tasks.filter(t => t.importance === 'critical');
     criticalTasks.sort((a, b) => {
         const dateA = a.type === 'recurring' ? todayStr : (a.date || '9999-99-99');
         const dateB = b.type === 'recurring' ? todayStr : (b.date || '9999-99-99');
