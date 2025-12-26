@@ -514,18 +514,12 @@ function handleAccountingEntrySubmit(e) {
     const acc = els.accounting.entryModal;
     try {
         const amount = parseFloat(acc.amount.value);
-        let category = '';
-
-        // Prioritize manual input
-        if (acc.manualName && acc.manualName.value.trim()) {
-            category = acc.manualName.value.trim();
-        } else {
-            category = acc.category.value;
-            if (category === 'custom') {
-                category = acc.customName.value;
-                if (!category) return alert('請輸入項目名稱');
-            }
+        let category = acc.category.value;
+        if (category === 'custom') {
+            category = acc.customName.value;
+            if (!category) return alert('請輸入類別名稱');
         }
+        const name = acc.manualName.value.trim();
         const bankId = parseInt(acc.bank.value);
         const date = acc.date.value;
 
@@ -533,6 +527,7 @@ function handleAccountingEntrySubmit(e) {
             id: Date.now(),
             amount,
             category,
+            name, // New field for optional item name
             bankId,
             date
         };
@@ -744,19 +739,22 @@ function renderAccountingBankDetail() {
 
     if (incomeList) {
         const incomes = state.accounting.transactions.filter(t => t.amount > 0).sort((a, b) => b.date.localeCompare(a.date));
-        incomeList.innerHTML = incomes.map(t => `
-            <div class="task-item" style="justify-content: space-between;">
-                <div>
-                    <div style="font-size:0.9rem; font-weight:600;">${t.category}</div>
-                    <div style="font-size:0.75rem; color:gray;">${t.date}</div>
+        incomeList.innerHTML = incomes.map(t => {
+            const displayName = t.name ? `${t.name} <span style="font-size:0.75rem; color:gray; font-weight:normal;">(${t.category})</span>` : t.category;
+            return `
+                <div class="task-item" style="justify-content: space-between;">
+                    <div>
+                        <div style="font-size:0.9rem; font-weight:600;">${displayName}</div>
+                        <div style="font-size:0.75rem; color:gray;">${t.date}</div>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span style="color:var(--accent-green); font-weight:700;">+${t.amount.toLocaleString()}</span>
+                        <button onclick="editAccountingTransaction(${t.id})" class="btn-icon-small">✏️</button>
+                        <button onclick="removeAccountingTransaction(${t.id})" class="btn-icon-small">🗑️</button>
+                    </div>
                 </div>
-                <div style="display:flex; align-items:center; gap:8px;">
-                    <span style="color:var(--accent-green); font-weight:700;">+${t.amount.toLocaleString()}</span>
-                    <button onclick="editAccountingTransaction(${t.id})" class="btn-icon-small">✏️</button>
-                    <button onclick="removeAccountingTransaction(${t.id})" class="btn-icon-small">🗑️</button>
-                </div>
-            </div>
-        `).join('');
+            `;
+        }).join('');
     }
 }
 
@@ -815,18 +813,21 @@ function showAccountingDayDetail(dateStr) {
     if (transactions.length === 0) {
         ex.dayList.innerHTML = '<div style="text-align:center; color:gray; padding:10px;">該日無支出紀錄</div>';
     } else {
-        ex.dayList.innerHTML = transactions.map(t => `
-            <div class="task-item" style="justify-content: space-between;">
-                <div>
-                    <div style="font-size:0.9rem; font-weight:600;">${t.category}</div>
+        ex.dayList.innerHTML = transactions.map(t => {
+            const displayName = t.name ? `${t.name} <span style="font-size:0.75rem; color:gray; font-weight:normal;">(${t.category})</span>` : t.category;
+            return `
+                <div class="task-item" style="justify-content: space-between;">
+                    <div>
+                        <div style="font-size:0.9rem; font-weight:600;">${displayName}</div>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span style="color:var(--accent-red); font-weight:700;">${t.amount.toLocaleString()}</span>
+                        <button onclick="editAccountingTransaction(${t.id})" class="btn-icon-small">✏️</button>
+                        <button onclick="removeAccountingTransaction(${t.id})" class="btn-icon-small">🗑️</button>
+                    </div>
                 </div>
-                <div style="display:flex; align-items:center; gap:8px;">
-                    <span style="color:var(--accent-red); font-weight:700;">${t.amount.toLocaleString()}</span>
-                    <button onclick="editAccountingTransaction(${t.id})" class="btn-icon-small">✏️</button>
-                    <button onclick="removeAccountingTransaction(${t.id})" class="btn-icon-small">🗑️</button>
-                </div>
-            </div>
-        `).join('');
+            `;
+        }).join('');
     }
 }
 
