@@ -441,14 +441,18 @@
                         <input type="number" id="accAmount" required step="0.01" placeholder="例如: 500 或 -100">
                     </div>
                     <div class="form-group">
-                        <label for="accCategory">項目名稱 (類別)</label>
+                        <label for="accManualName">項目名稱 (手動輸入)</label>
+                        <input type="text" id="accManualName" placeholder="例如: 買午餐 (優先使用此項)">
+                    </div>
+                    <div class="form-group">
+                        <label for="accCategory">或選擇現有清單</label>
                         <select id="accCategory">
                             <!-- Injected via JS -->
                             <option value="custom">自訂</option>
                         </select>
                     </div>
                     <div id="accCustomNameGroup" class="form-group hidden">
-                        <label for="accCustomName">自訂名稱</label>
+                        <label for="accCustomName">管理自訂名稱</label>
                         <input type="text" id="accCustomName" placeholder="輸入名稱">
                     </div>
                     <div class="form-group">

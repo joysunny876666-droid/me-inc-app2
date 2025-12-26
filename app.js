@@ -160,6 +160,7 @@ const els = {
             form: document.getElementById('accountingEntryForm'),
             amount: document.getElementById('accAmount'),
             category: document.getElementById('accCategory'),
+            manualName: document.getElementById('accManualName'),
             customNameGroup: document.getElementById('accCustomNameGroup'),
             customName: document.getElementById('accCustomName'),
             bank: document.getElementById('accBank'),
@@ -513,10 +514,17 @@ function handleAccountingEntrySubmit(e) {
     const acc = els.accounting.entryModal;
     try {
         const amount = parseFloat(acc.amount.value);
-        let category = acc.category.value;
-        if (category === 'custom') {
-            category = acc.customName.value;
-            if (!category) return alert('請輸入自訂名稱');
+        let category = '';
+
+        // Prioritize manual input
+        if (acc.manualName && acc.manualName.value.trim()) {
+            category = acc.manualName.value.trim();
+        } else {
+            category = acc.category.value;
+            if (category === 'custom') {
+                category = acc.customName.value;
+                if (!category) return alert('請輸入項目名稱');
+            }
         }
         const bankId = parseInt(acc.bank.value);
         const date = acc.date.value;
@@ -739,10 +747,14 @@ function renderAccountingBankDetail() {
         incomeList.innerHTML = incomes.map(t => `
             <div class="task-item" style="justify-content: space-between;">
                 <div>
-                    <div style="font-size:0.9rem;">${t.category}</div>
+                    <div style="font-size:0.9rem; font-weight:600;">${t.category}</div>
                     <div style="font-size:0.75rem; color:gray;">${t.date}</div>
                 </div>
-                <span style="color:var(--accent-green); font-weight:700;">+${t.amount.toLocaleString()}</span>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="color:var(--accent-green); font-weight:700;">+${t.amount.toLocaleString()}</span>
+                    <button onclick="editAccountingTransaction(${t.id})" class="btn-icon-small">✏️</button>
+                    <button onclick="removeAccountingTransaction(${t.id})" class="btn-icon-small">🗑️</button>
+                </div>
             </div>
         `).join('');
     }
@@ -830,6 +842,7 @@ function removeAccountingTransaction(id) {
     saveState();
     renderAccountingView();
     renderAccountingExpenseCalendar();
+    renderAccountingBankDetail(); // Added refresh
     els.accounting.expenseModal.dayDetail.classList.add('hidden');
 }
 
@@ -846,6 +859,7 @@ function editAccountingTransaction(id) {
     saveState();
     renderAccountingView();
     renderAccountingExpenseCalendar();
+    renderAccountingBankDetail(); // Added refresh
     els.accounting.expenseModal.dayDetail.classList.add('hidden');
 }
 
