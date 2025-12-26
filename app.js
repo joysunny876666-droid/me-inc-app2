@@ -119,6 +119,14 @@ const els = {
         btnSingle: document.getElementById('btnEditSingle'),
         btnFuture: document.getElementById('btnEditFuture'),
         btnCancel: document.getElementById('btnCancelEditScope')
+    },
+    data: {
+        view: document.getElementById('dataView'),
+        navBtn: document.getElementById('navDataBtn'),
+        backBtn: document.getElementById('backFromDataBtn'),
+        dateLabel: document.getElementById('dataDateLabel'),
+        totalChange: document.getElementById('dataTotalChange'),
+        list: document.getElementById('dataList')
     }
 };
 
@@ -187,9 +195,10 @@ function setupEventListeners() {
     }
 
     if (els.backBtns.fromAdd) els.backBtns.fromAdd.onclick = () => renderView('start');
-    if (els.backBtns.fromAdd) els.backBtns.fromAdd.onclick = () => renderView('start');
     if (els.backBtns.fromSchedule) els.backBtns.fromSchedule.onclick = () => renderView('start');
     if (els.backBtns.fromGantt) els.backBtns.fromGantt.onclick = () => renderView('start');
+    if (els.data.backBtn) els.data.backBtn.onclick = () => renderView('start');
+    if (els.data.navBtn) els.data.navBtn.onclick = () => renderView('data');
 
     // Chart Click Navigation
     const ctxGantt = document.getElementById('ganttChart');
@@ -339,6 +348,42 @@ function renderView(viewName) {
     if (viewName === 'start') renderStartPage();
     if (viewName === 'schedule') renderCalendar(currentMonth);
     if (viewName === 'focusedGantt') renderFocusedGantt();
+    if (viewName === 'data') renderDataView();
+}
+
+function renderDataView() {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = getLocalDateStr(yesterday);
+
+    if (els.data.dateLabel) els.data.dateLabel.textContent = `${yesterdayStr} 數據回顧`;
+
+    const tasks = getTasksForDate(yesterdayStr);
+    let totalChange = 0;
+
+    if (els.data.list) {
+        els.data.list.innerHTML = '';
+        if (tasks.length === 0) {
+            els.data.list.innerHTML = '<p style="text-align:center; color:gray; padding:20px;">昨日無行程</p>';
+        } else {
+            tasks.forEach(task => {
+                const isCompleted = task.completedHistory && task.completedHistory[yesterdayStr];
+                if (isCompleted) {
+                    totalChange += task.score;
+                }
+                const taskEl = createTaskEl(task, yesterdayStr, false);
+                // Disable checkbox in data view as it's past
+                const checkbox = taskEl.querySelector('.task-checkbox');
+                if (checkbox) checkbox.disabled = true;
+                els.data.list.appendChild(taskEl);
+            });
+        }
+    }
+
+    if (els.data.totalChange) {
+        els.data.totalChange.textContent = `${totalChange >= 0 ? '+' : ''}${totalChange.toFixed(2)}`;
+        els.data.totalChange.className = `price-value ${totalChange >= 0 ? 'price-up' : 'price-down'}`;
+    }
 }
 
 function renderFocusedGantt() {
