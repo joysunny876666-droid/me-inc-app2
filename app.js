@@ -1258,6 +1258,7 @@ function updateRecurringSingle() {
         name: editPendingData.name,
         time: editPendingData.time,
         endTime: editPendingData.endTime,
+        exceptions: [], // Important: Reset exceptions for the new instance
         // Reset histories for the new task as it's a new instance
         completedHistory: {},
         penaltyHistory: {},
