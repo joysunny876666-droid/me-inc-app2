@@ -440,109 +440,111 @@
                         <label for="accAmount">金額 (正數為收入，負數為支出)</label>
                         <input type="number" id="accAmount" required step="0.01" placeholder="例如: 500 或 -100">
                     </div>
-                    <label for="accManualName">項目名稱 (可不填)</label>
-                    <input type="text" id="accManualName" placeholder="例如: 某某店午餐">
-            </div>
-            <div class="form-group">
-                <label for="accCategory">選擇類別</label>
-                <select id="accCategory">
-                    <!-- Injected via JS -->
-                    <option value="custom">自訂</option>
-                </select>
-            </div>
-            <div id="accCustomNameGroup" class="form-group hidden">
-                <label for="accCustomName">管理自訂類別</label>
-                <input type="text" id="accCustomName" placeholder="輸入新的類別名稱">
-            </div>
-            <div class="form-group">
-                <label for="accBank">選擇銀行</label>
-                <select id="accBank">
-                    <!-- Injected via JS -->
-                </select>
-            </div>
-            <div class="form-group">
-                <label for="accDate">日期</label>
-                <input type="date" id="accDate" required>
-            </div>
-            <div class="form-actions-page">
-                <button type="submit" class="btn-confirm">儲存</button>
-                <button type="button" id="cancelAccEntryBtn" class="btn-cancel">取消</button>
-            </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Accounting Settings Modal -->
-    <div id="accountingSettingsModal" class="modal hidden">
-        <div class="modal-content" style="max-height: 80vh; overflow-y: auto;">
-            <div class="modal-header">
-                <h3>記帳設定</h3>
-                <button id="closeAccSettingsBtn" class="close-btn">&times;</button>
-            </div>
-            <section class="settings-section">
-                <h4>銀行管理</h4>
-                <div id="bankList" class="settings-list"></div>
-                <button id="addBankBtn" class="btn-secondary small">新增銀行</button>
-            </section>
-            <section class="settings-section" style="margin-top: 20px;">
-                <h4>類別管理</h4>
-                <div id="categoryList" class="settings-list"></div>
-                <button id="addCategoryBtn" class="btn-secondary small">新增類別</button>
-            </section>
-            <div class="form-actions-page" style="margin-top: 20px;">
-                <button type="button" id="closeAccSettingsBottomBtn" class="btn-back">關閉</button>
+                    <div class="form-group">
+                        <label for="accManualName">項目名稱 (可不填)</label>
+                        <input type="text" id="accManualName" placeholder="例如: 某某店午餐">
+                    </div>
+                    <div class="form-group">
+                        <label for="accCategory">選擇類別</label>
+                        <select id="accCategory">
+                            <!-- Injected via JS -->
+                            <option value="custom">自訂</option>
+                        </select>
+                    </div>
+                    <div id="accCustomNameGroup" class="form-group hidden">
+                        <label for="accCustomName">管理自訂類別</label>
+                        <input type="text" id="accCustomName" placeholder="輸入新的類別名稱">
+                    </div>
+                    <div class="form-group">
+                        <label for="accBank">選擇銀行</label>
+                        <select id="accBank">
+                            <!-- Injected via JS -->
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="accDate">日期</label>
+                        <input type="date" id="accDate" required>
+                    </div>
+                    <div class="form-actions-page">
+                        <button type="submit" class="btn-confirm">儲存</button>
+                        <button type="button" id="cancelAccEntryBtn" class="btn-cancel">取消</button>
+                    </div>
+                </form>
             </div>
         </div>
-    </div>
 
-    <!-- Accounting Bank/Income Detail Modal -->
-    <div id="accountingBankModal" class="modal hidden">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>總預算明細</h3>
-                <button id="closeAccBankBtn" class="close-btn">&times;</button>
-            </div>
-            <div class="detail-section">
-                <h4>各銀行餘額</h4>
-                <div id="bankBalanceList" class="detail-list"></div>
-            </div>
-            <div class="detail-section" style="margin-top: 20px;">
-                <h4>入帳原因紀錄</h4>
-                <div id="incomeHistoryList" class="detail-list"></div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Accounting Expense Calendar Modal -->
-    <div id="accountingExpenseModal" class="modal hidden">
-        <div class="modal-content" style="max-width: 95%; max-height: 90vh; overflow-y: auto;">
-            <div class="modal-header">
-                <button id="closeAccExpenseBtn" class="icon-btn">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M19 12H5M12 19l-7-7 7-7" />
-                    </svg>
-                </button>
-                <h3 style="flex: 1; text-align: center;">支出明細</h3>
-                <div style="width: 40px;"></div> <!-- Spacer -->
-            </div>
-            <div id="accCalendarHeader" class="calendar-header" style="margin-top: 10px;">
-                <button id="prevAccMonthBtn">&lt;</button>
-                <h3 id="currentAccMonthLabel"></h3>
-                <button id="nextAccMonthBtn">&gt;</button>
-            </div>
-            <div id="accCalendarGrid" class="calendar-grid"></div>
-
-            <div id="accDayDetail" class="detail-list hidden"
-                style="margin-top: 24px; border-top: 1px dashed var(--border-color); padding-top: 16px;">
-                <div class="modal-header" style="border: none; padding: 0; margin-bottom: 8px;">
-                    <h4 id="accDayLabel"></h4>
+        <!-- Accounting Settings Modal -->
+        <div id="accountingSettingsModal" class="modal hidden">
+            <div class="modal-content" style="max-height: 80vh; overflow-y: auto;">
+                <div class="modal-header">
+                    <h3>記帳設定</h3>
+                    <button id="closeAccSettingsBtn" class="close-btn">&times;</button>
                 </div>
-                <div id="accDayList"></div>
+                <section class="settings-section">
+                    <h4>銀行管理</h4>
+                    <div id="bankList" class="settings-list"></div>
+                    <button id="addBankBtn" class="btn-secondary small">新增銀行</button>
+                </section>
+                <section class="settings-section" style="margin-top: 20px;">
+                    <h4>類別管理</h4>
+                    <div id="categoryList" class="settings-list"></div>
+                    <button id="addCategoryBtn" class="btn-secondary small">新增類別</button>
+                </section>
+                <div class="form-actions-page" style="margin-top: 20px;">
+                    <button type="button" id="closeAccSettingsBottomBtn" class="btn-back">關閉</button>
+                </div>
             </div>
         </div>
-    </div>
 
-    <script src="app.js"></script>
+        <!-- Accounting Bank/Income Detail Modal -->
+        <div id="accountingBankModal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>總預算明細</h3>
+                    <button id="closeAccBankBtn" class="close-btn">&times;</button>
+                </div>
+                <div class="detail-section">
+                    <h4>各銀行餘額</h4>
+                    <div id="bankBalanceList" class="detail-list"></div>
+                </div>
+                <div class="detail-section" style="margin-top: 20px;">
+                    <h4>入帳原因紀錄</h4>
+                    <div id="incomeHistoryList" class="detail-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Accounting Expense Calendar Modal -->
+        <div id="accountingExpenseModal" class="modal hidden">
+            <div class="modal-content" style="max-width: 95%; max-height: 90vh; overflow-y: auto;">
+                <div class="modal-header">
+                    <button id="closeAccExpenseBtn" class="icon-btn">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M19 12H5M12 19l-7-7 7-7" />
+                        </svg>
+                    </button>
+                    <h3 style="flex: 1; text-align: center;">支出明細</h3>
+                    <div style="width: 40px;"></div> <!-- Spacer -->
+                </div>
+                <div id="accCalendarHeader" class="calendar-header" style="margin-top: 10px;">
+                    <button id="prevAccMonthBtn">&lt;</button>
+                    <h3 id="currentAccMonthLabel"></h3>
+                    <button id="nextAccMonthBtn">&gt;</button>
+                </div>
+                <div id="accCalendarGrid" class="calendar-grid"></div>
+
+                <div id="accDayDetail" class="detail-list hidden"
+                    style="margin-top: 24px; border-top: 1px dashed var(--border-color); padding-top: 16px;">
+                    <div class="modal-header" style="border: none; padding: 0; margin-bottom: 8px;">
+                        <h4 id="accDayLabel"></h4>
+                    </div>
+                    <div id="accDayList"></div>
+                </div>
+            </div>
+        </div>
+
+        <script src="app.js"></script>
 </body>
 
 </html>
