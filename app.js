@@ -193,7 +193,6 @@ const els = {
             dayDetail: document.getElementById('accDayDetail'),
             dayLabel: document.getElementById('accDayLabel'),
             dayList: document.getElementById('accDayList'),
-            monthlyList: document.getElementById('accMonthlyList'),
             closeBtn: document.getElementById('closeAccExpenseBtn')
         },
         charts: {
@@ -792,37 +791,6 @@ function renderAccountingExpenseCalendar() {
         cell.onclick = () => showAccountingDayDetail(dStr);
         ex.calendarGrid.appendChild(cell);
     }
-
-    // --- New: Render Monthly List ---
-    renderAccountingMonthlyList(year, month);
-}
-
-function renderAccountingMonthlyList(year, month) {
-    const ex = els.accounting.expenseModal;
-    const monthStr = `${year}-${String(month + 1).padStart(2, '0')}`;
-    const monthlyTransactions = state.accounting.transactions
-        .filter(t => t.date.startsWith(monthStr) && t.amount < 0)
-        .sort((a, b) => b.date.localeCompare(a.date));
-
-    if (ex.monthlyList) {
-        if (monthlyTransactions.length === 0) {
-            ex.monthlyList.innerHTML = '<div style="text-align:center; color:gray; padding:20px;">本月無支出</div>';
-        } else {
-            ex.monthlyList.innerHTML = monthlyTransactions.map(t => `
-                <div class="task-item" style="justify-content: space-between;">
-                    <div>
-                        <div style="font-size:0.9rem; font-weight:600;">${t.category}</div>
-                        <div style="font-size:0.75rem; color:gray;">${t.date}</div>
-                    </div>
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <span style="color:var(--accent-red); font-weight:700;">${t.amount.toLocaleString()}</span>
-                        <button onclick="editAccountingTransaction(${t.id})" class="btn-icon-small">✏️</button>
-                        <button onclick="removeAccountingTransaction(${t.id})" class="btn-icon-small">🗑️</button>
-                    </div>
-                </div>
-            `).join('');
-        }
-    }
 }
 
 function showAccountingDayDetail(dateStr) {
@@ -831,18 +799,23 @@ function showAccountingDayDetail(dateStr) {
     ex.dayDetail.classList.remove('hidden');
 
     const transactions = state.accounting.transactions.filter(t => t.date === dateStr && t.amount < 0);
-    ex.dayList.innerHTML = transactions.map(t => `
-        <div class="task-item" style="justify-content: space-between;">
-            <div>
-                <div style="font-size:0.9rem;">${t.category}</div>
+
+    if (transactions.length === 0) {
+        ex.dayList.innerHTML = '<div style="text-align:center; color:gray; padding:10px;">該日無支出紀錄</div>';
+    } else {
+        ex.dayList.innerHTML = transactions.map(t => `
+            <div class="task-item" style="justify-content: space-between;">
+                <div>
+                    <div style="font-size:0.9rem; font-weight:600;">${t.category}</div>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="color:var(--accent-red); font-weight:700;">${t.amount.toLocaleString()}</span>
+                    <button onclick="editAccountingTransaction(${t.id})" class="btn-icon-small">✏️</button>
+                    <button onclick="removeAccountingTransaction(${t.id})" class="btn-icon-small">🗑️</button>
+                </div>
             </div>
-            <div style="display:flex; align-items:center; gap:8px;">
-                <span style="color:var(--accent-red); font-weight:700;">${t.amount.toLocaleString()}</span>
-                <button onclick="editAccountingTransaction(${t.id})" class="btn-icon-small">✏️</button>
-                <button onclick="removeAccountingTransaction(${t.id})" class="btn-icon-small">🗑️</button>
-            </div>
-        </div>
-    `).join('');
+        `).join('');
+    }
 }
 
 function removeAccountingTransaction(id) {
