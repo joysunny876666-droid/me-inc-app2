@@ -586,3 +586,153 @@ select:focus {
     background: rgba(59, 130, 246, 0.15);
     color: var(--accent-blue);
 }
+
+/* Accounting System Styles */
+.accounting-summary-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.accounting-card {
+    padding: 20px;
+    border-radius: 16px;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+}
+
+.accounting-card:active {
+    transform: scale(0.98);
+}
+
+.accounting-card.income {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(16, 185, 129, 0.05));
+    border-color: rgba(16, 185, 129, 0.3);
+}
+
+.accounting-card.expense {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.2), rgba(239, 68, 68, 0.05));
+    border-color: rgba(239, 68, 68, 0.3);
+}
+
+.accounting-card .label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+    display: block;
+}
+
+.accounting-card .value {
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+
+.accounting-charts-container {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.chart-box {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 16px;
+    height: 300px;
+    /* Fixed height to prevent infinite growth */
+}
+
+.chart-box h3 {
+    font-size: 1rem;
+    margin-bottom: 12px;
+    color: var(--text-secondary);
+}
+
+.pie-container {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.pie-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 0.85rem;
+    flex: 1;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.legend-color {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+}
+
+.legend-amount {
+    margin-left: auto;
+    font-family: monospace;
+    color: var(--text-secondary);
+}
+
+.settings-section h4 {
+    margin: 16px 0 8px;
+    font-size: 0.95rem;
+    color: var(--accent-blue);
+}
+
+.settings-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.settings-item {
+    background: var(--bg-color);
+    padding: 10px 12px;
+    border-radius: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border: 1px solid var(--border-color);
+}
+
+.settings-item .actions {
+    display: flex;
+    gap: 8px;
+}
+
+.btn-icon-small {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 4px;
+}
+
+.btn-secondary.small {
+    padding: 8px 12px;
+    font-size: 0.85rem;
+    margin-top: 8px;
+    width: auto;
+}
+
+.detail-section h4 {
+    margin-bottom: 8px;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.detail-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
