@@ -850,18 +850,28 @@ function removeAccountingTransaction(id) {
 function editAccountingTransaction(id) {
     const t = state.accounting.transactions.find(x => x.id === id);
     if (!t) return;
-    const newAmount = parseFloat(prompt('修改金額為:', t.amount.toString()));
-    if (isNaN(newAmount)) return;
+
+    const newName = prompt('修改項目名稱 (留空則不變):', t.name || '');
+    const newAmount = prompt('修改金額為:', t.amount.toString());
+
+    if (newAmount === null) return;
+    const amountNum = parseFloat(newAmount);
+    if (isNaN(amountNum)) return alert('金額格式錯誤');
 
     const bank = state.accounting.banks.find(b => b.id === t.bankId);
-    if (bank) bank.balance = bank.balance - t.amount + newAmount;
+    if (bank) bank.balance = bank.balance - t.amount + amountNum;
 
-    t.amount = newAmount;
+    t.name = newName !== null ? newName.trim() : (t.name || '');
+    t.amount = amountNum;
+
     saveState();
     renderAccountingView();
     renderAccountingExpenseCalendar();
-    renderAccountingBankDetail(); // Added refresh
-    els.accounting.expenseModal.dayDetail.classList.add('hidden');
+    renderAccountingBankDetail();
+    // Keep detail view if open, or refresh it
+    if (!els.accounting.expenseModal.dayDetail.classList.contains('hidden')) {
+        showAccountingDayDetail(t.date);
+    }
 }
 
 function renderDataView() {
