@@ -16,6 +16,9 @@ const defaultState = {
             { id: 4, name: '薪資' },
             { id: 5, name: '獎金' }
         ]
+    },
+    ganttSystem: {
+        projects: []
     }
 };
 
@@ -56,17 +59,50 @@ const els = {
         schedule: document.getElementById('scheduleView'),
         focusedGantt: document.getElementById('focusedGanttView'),
         data: document.getElementById('dataView'),
-        accounting: document.getElementById('accountingView')
+        accounting: document.getElementById('accountingView'),
+        ganttMain: document.getElementById('ganttMainView'),
+        ganttAddProject: document.getElementById('ganttAddProjectView'),
+        ganttProjectDetail: document.getElementById('ganttProjectDetailView')
     },
     nav: {
         addBtn: document.getElementById('navAddBtn'),
         scheduleBtn: document.getElementById('navScheduleBtn'),
         accountingBtn: document.getElementById('navAccountingBtn'),
+        ganttBtn: document.getElementById('navGanttBtn'),
     },
     backBtns: {
         fromAdd: document.getElementById('backFromAddBtn'),
         fromSchedule: document.getElementById('backFromScheduleBtn'),
-        fromGantt: document.getElementById('backFromGanttBtn')
+        fromGantt: document.getElementById('backFromGanttBtn'),
+        fromGanttMain: document.getElementById('backFromGanttMainBtn'),
+        fromAddProject: document.getElementById('backFromAddProjectBtn'),
+        fromProjDetail: document.getElementById('backFromProjDetailBtn')
+    },
+    gantt: {
+        openAddProjectBtn: document.getElementById('openAddProjectBtn'),
+        projectList: document.getElementById('projectList'),
+        addForm: document.getElementById('addProjectForm'),
+        parentTaskContainer: document.getElementById('parentTaskListContainer'),
+        addParentTaskSlotBtn: document.getElementById('addParentTaskSlotBtn'),
+        projDetailContent: document.getElementById('projDetailContent'),
+        projDetailTitle: document.getElementById('projDetailTitle'),
+        childModal: {
+            el: document.getElementById('addChildTaskModal'),
+            form: document.getElementById('addChildTaskForm'),
+            closeBtn: document.getElementById('closeChildTaskModalBtn')
+        },
+        editModal: {
+            el: document.getElementById('editGanttTaskModal'),
+            form: document.getElementById('editGanttTaskForm'),
+            closeBtn: document.getElementById('closeEditGanttModalBtn'),
+            deleteBtn: document.getElementById('deleteGanttTaskBtn')
+        },
+        projEditModal: {
+            el: document.getElementById('editGanttProjectModal'),
+            form: document.getElementById('editGanttProjectForm'),
+            closeBtn: document.getElementById('closeEditGanttProjectModalBtn'),
+            deleteBtn: document.getElementById('deleteGanttProjectBtn')
+        }
     },
     dashboard: {
         price: document.getElementById('currentPrice'),
@@ -427,6 +463,7 @@ function renderView(viewName) {
     if (viewName === 'focusedGantt') renderFocusedGantt();
     if (viewName === 'data') renderDataView();
     if (viewName === 'accounting') renderAccountingView();
+    if (viewName === 'ganttMain') renderGanttMainPage();
 }
 
 // --- Accounting Logic ---
@@ -1859,10 +1896,414 @@ function finishEdit() {
     editPendingData = null;
 }
 
+// --- Gantt System Logic ---
+function setupGanttListeners() {
+    const g = els.gantt;
+    const nav = els.nav;
+    const back = els.backBtns;
+
+    if (nav.ganttBtn) nav.ganttBtn.onclick = () => renderView('ganttMain');
+
+    if (back.fromGanttMain) back.fromGanttMain.onclick = () => renderView('start');
+    if (back.fromAddProject) back.fromAddProject.onclick = () => renderView('ganttMain');
+    if (back.fromProjDetail) back.fromProjDetail.onclick = () => renderView('ganttMain');
+
+    if (g.openAddProjectBtn) g.openAddProjectBtn.onclick = () => {
+        g.addForm.reset();
+        g.parentTaskContainer.innerHTML = '';
+        addParentTaskSlot(); // Add one by default
+        renderView('ganttAddProject');
+    };
+
+    if (g.addParentTaskSlotBtn) g.addParentTaskSlotBtn.onclick = addParentTaskSlot;
+
+    if (g.addForm) g.addForm.onsubmit = handleAddProjectSubmit;
+
+    if (g.childModal.closeBtn) g.childModal.closeBtn.onclick = () => g.childModal.el.classList.add('hidden');
+    if (g.childModal.form) g.childModal.form.onsubmit = handleAddChildTaskSubmit;
+
+    if (g.editModal.closeBtn) g.editModal.closeBtn.onclick = () => g.editModal.el.classList.add('hidden');
+    if (g.editModal.form) g.editModal.form.onsubmit = handleEditGanttTaskSubmit;
+    if (g.editModal.deleteBtn) g.editModal.deleteBtn.onclick = handleDeleteGanttTask;
+
+    if (g.projEditModal.closeBtn) g.projEditModal.closeBtn.onclick = () => g.projEditModal.el.classList.add('hidden');
+    if (g.projEditModal.form) g.projEditModal.form.onsubmit = handleEditGanttProjectSubmit;
+    if (g.projEditModal.deleteBtn) g.projEditModal.deleteBtn.onclick = handleDeleteGanttProject;
+}
+function openEditGanttProjectModal(projId) {
+    const proj = state.ganttSystem.projects.find(p => p.id === projId);
+    if (!proj) return;
+
+    document.getElementById('editProjId').value = projId;
+    document.getElementById('editProjName').value = proj.name;
+    document.getElementById('editProjScore').value = proj.score;
+    document.getElementById('editProjStart').value = proj.startDate;
+    document.getElementById('editProjEnd').value = proj.endDate;
+
+    els.gantt.projEditModal.el.classList.remove('hidden');
+}
+
+function handleEditGanttProjectSubmit(e) {
+    e.preventDefault();
+    const projId = document.getElementById('editProjId').value;
+    const proj = state.ganttSystem.projects.find(p => p.id === projId);
+
+    proj.name = document.getElementById('editProjName').value;
+    proj.score = parseInt(document.getElementById('editProjScore').value);
+    proj.startDate = document.getElementById('editProjStart').value;
+    proj.endDate = document.getElementById('editProjEnd').value;
+
+    saveState();
+    els.gantt.projEditModal.el.classList.add('hidden');
+    renderGanttMainPage();
+}
+
+function handleDeleteGanttProject() {
+    if (!confirm('確定要刪除整個企劃嗎？此操作不可撤銷。')) return;
+    const projId = document.getElementById('editProjId').value;
+    state.ganttSystem.projects = state.ganttSystem.projects.filter(p => p.id !== projId);
+    saveState();
+    els.gantt.projEditModal.el.classList.add('hidden');
+    renderGanttMainPage();
+}
+
+function openEditGanttModal(projId, parentId, id, type) {
+    const proj = state.ganttSystem.projects.find(p => p.id === projId);
+    let item;
+    if (type === 'parent') {
+        item = proj.parents.find(p => p.id === id);
+        document.getElementById('editGanttImportanceGroup').classList.add('hidden');
+    } else {
+        const parent = proj.parents.find(p => p.id === parentId);
+        item = parent.children.find(c => c.id === id);
+        document.getElementById('editGanttImportanceGroup').classList.remove('hidden');
+        document.getElementById('editGanttImportance').value = item.importance;
+    }
+
+    document.getElementById('editGanttProjectId').value = projId;
+    document.getElementById('editGanttParentId').value = parentId;
+    document.getElementById('editGanttTaskId').value = id;
+    document.getElementById('editGanttType').value = type;
+
+    document.getElementById('editGanttName').value = item.name;
+    document.getElementById('editGanttScore').value = item.score;
+    document.getElementById('editGanttStart').value = item.startDate;
+    document.getElementById('editGanttEnd').value = item.endDate;
+
+    els.gantt.editModal.el.classList.remove('hidden');
+}
+
+function handleEditGanttTaskSubmit(e) {
+    e.preventDefault();
+    const projId = document.getElementById('editGanttProjectId').value;
+    const parentId = document.getElementById('editGanttParentId').value;
+    const id = document.getElementById('editGanttTaskId').value;
+    const type = document.getElementById('editGanttType').value;
+
+    const proj = state.ganttSystem.projects.find(p => p.id === projId);
+    let item;
+
+    if (type === 'parent') {
+        item = proj.parents.find(p => p.id === id);
+    } else {
+        const parent = proj.parents.find(p => p.id === parentId);
+        item = parent.children.find(c => c.id === id);
+        item.importance = document.getElementById('editGanttImportance').value;
+    }
+
+    item.name = document.getElementById('editGanttName').value;
+    item.score = parseInt(document.getElementById('editGanttScore').value);
+    item.startDate = document.getElementById('editGanttStart').value;
+    item.endDate = document.getElementById('editGanttEnd').value;
+
+    saveState();
+    els.gantt.editModal.el.classList.add('hidden');
+    viewProjectDetail(projId);
+}
+
+function handleDeleteGanttTask() {
+    if (!confirm('確定要刪除此項目嗎？')) return;
+
+    const projId = document.getElementById('editGanttProjectId').value;
+    const parentId = document.getElementById('editGanttParentId').value;
+    const id = document.getElementById('editGanttTaskId').value;
+    const type = document.getElementById('editGanttType').value;
+
+    const proj = state.ganttSystem.projects.find(p => p.id === projId);
+
+    if (type === 'parent') {
+        proj.parents = proj.parents.filter(p => p.id !== id);
+    } else {
+        const parent = proj.parents.find(p => p.id === parentId);
+        parent.children = parent.children.filter(c => c.id !== id);
+    }
+
+    saveState();
+    els.gantt.editModal.el.classList.add('hidden');
+    viewProjectDetail(projId);
+}
+
+function addParentTaskSlot() {
+    const container = els.gantt.parentTaskContainer;
+    const id = Date.now();
+    const div = document.createElement('div');
+    div.className = 'form-group parent-slot';
+    div.style = 'border: 1px solid var(--border-color); padding: 10px; border-radius: 8px;';
+    div.innerHTML = `
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <span>父任務</span>
+            <button type="button" class="btn-icon-small" onclick="this.parentElement.parentElement.remove()">🗑️</button>
+        </div>
+        <input type="text" placeholder="父任務名稱" class="parent-name" required style="margin-bottom: 8px;">
+        <input type="number" placeholder="完成得分" class="parent-score" required value="50" style="margin-bottom: 8px;">
+        <div style="display: flex; gap: 8px;">
+            <input type="date" class="parent-start" required>
+            <input type="date" class="parent-end" required>
+        </div>
+    `;
+    container.appendChild(div);
+}
+
+function handleAddProjectSubmit(e) {
+    e.preventDefault();
+    const g = els.gantt;
+    const name = document.getElementById('projName').value;
+    const score = parseInt(document.getElementById('projScore').value);
+    const startDate = document.getElementById('projStartDate').value;
+    const endDate = document.getElementById('projEndDate').value;
+
+    const parentSlots = document.querySelectorAll('.parent-slot');
+    const parents = Array.from(parentSlots).map((slot, index) => ({
+        id: `p-${Date.now()}-${index}`,
+        name: slot.querySelector('.parent-name').value,
+        score: parseInt(slot.querySelector('.parent-score').value),
+        startDate: slot.querySelector('.parent-start').value,
+        endDate: slot.querySelector('.parent-end').value,
+        children: [],
+        completed: false
+    }));
+
+    const newProject = {
+        id: `proj-${Date.now()}`,
+        name,
+        score,
+        startDate,
+        endDate,
+        parents,
+        completed: false
+    };
+
+    state.ganttSystem.projects.push(newProject);
+    saveState();
+    renderView('ganttMain');
+}
+
+function renderGanttMainPage() {
+    const container = els.gantt.projectList;
+    if (!container) return;
+    container.innerHTML = '';
+
+    if (state.ganttSystem.projects.length === 0) {
+        container.innerHTML = '<p style="text-align:center; color:gray; padding:20px;">尚無企劃，請點擊 + 新增</p>';
+        return;
+    }
+
+    const todayStr = getLocalDateStr();
+
+    state.ganttSystem.projects.forEach(proj => {
+        const card = document.createElement('div');
+        card.className = 'project-card';
+
+        // Calculate progress
+        const totalItems = proj.parents.length + proj.parents.reduce((acc, p) => acc + p.children.length, 0);
+        const completedItems = proj.parents.filter(p => p.completed).length +
+            proj.parents.reduce((acc, p) => acc + p.children.filter(c => c.completed).length, 0);
+        const progress = totalItems > 0 ? (completedItems / totalItems) * 100 : 0;
+
+        // Find today's task
+        let todayTaskHtml = '<div style="font-size: 0.8rem; color: gray;">今日無任務</div>';
+        const todayChild = proj.parents.flatMap(p => p.children).find(c => todayStr >= c.startDate && todayStr <= c.endDate && !c.completed);
+        const todayParent = proj.parents.find(p => todayStr >= p.startDate && todayStr <= p.endDate && !p.completed);
+
+        if (todayChild) {
+            todayTaskHtml = `<div style="font-size: 0.8rem; color: var(--accent-blue);">今日：${todayChild.name} (子任務)</div>`;
+        } else if (todayParent) {
+            todayTaskHtml = `<div style="font-size: 0.8rem; color: var(--accent-blue);">今日：${todayParent.name} (父任務)</div>`;
+        }
+
+        card.innerHTML = `
+            <div class="project-header">
+                <div class="project-title">${proj.name}</div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <div class="project-score">${proj.score} 分</div>
+                    <button class="btn-icon-small" onclick="openEditGanttProjectModal('${proj.id}')">✏️</button>
+                </div>
+            </div>
+            <div style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 4px;">期限：${proj.startDate} ~ ${proj.endDate}</div>
+            <div class="progress-container">
+                <div class="progress-bar" style="width: ${progress}%"></div>
+            </div>
+            ${todayTaskHtml}
+            <button class="btn-secondary small full-width" style="margin-top: 10px;" onclick="viewProjectDetail('${proj.id}')">查看詳細 / 任務管理</button>
+        `;
+        container.appendChild(card);
+    });
+}
+
+function viewProjectDetail(projId) {
+    const proj = state.ganttSystem.projects.find(p => p.id === projId);
+    if (!proj) return;
+
+    renderView('ganttProjectDetail');
+    els.gantt.projDetailTitle.textContent = proj.name;
+    const container = els.gantt.projDetailContent;
+    container.innerHTML = '';
+
+    proj.parents.forEach((parent, pIdx) => {
+        const isLocked = pIdx > 0 && !proj.parents[pIdx - 1].completed;
+        const pDiv = document.createElement('div');
+        pDiv.className = `parent-task-item ${isLocked ? 'task-locked' : ''}`;
+
+        const childrenHtml = parent.children.map(c => `
+            <div class="child-task-item ${c.importance}">
+                <div style="display: flex; align-items: center; gap: 8px; flex: 1;">
+                    <input type="checkbox" class="task-checkbox" ${c.completed ? 'checked' : ''} ${isLocked || (c.completed && !parent.completed) ? '' : (isLocked || parent.completed ? 'disabled' : '')} onchange="toggleChildTask('${proj.id}', '${parent.id}', '${c.id}', this.checked)">
+                    <span style="${c.completed ? 'text-decoration: line-through; opacity: 0.5;' : ''}">${c.name}</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="font-size: 0.75rem; color: var(--text-secondary);">${c.score} 分</div>
+                    <button class="btn-icon-small" onclick="openEditGanttModal('${proj.id}', '${parent.id}', '${c.id}', 'child')">✏️</button>
+                </div>
+            </div>
+        `).join('');
+
+        pDiv.innerHTML = `
+            <div class="parent-header">
+                <div style="display: flex; align-items: center; gap: 8px; flex: 1;">
+                    <input type="checkbox" class="task-checkbox" ${parent.completed ? 'checked' : ''} ${isLocked || (parent.completed && !proj.completed) ? '' : (isLocked || parent.children.some(c => !c.completed) ? 'disabled' : '')} onchange="toggleParentTask('${proj.id}', '${parent.id}', this.checked)">
+                    <span style="font-weight: 700; ${parent.completed ? 'text-decoration: line-through; opacity: 0.5;' : ''}">${parent.name}</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                     <span style="font-size: 0.75rem; color: var(--text-secondary);">${parent.score} 分</span>
+                     <button class="btn-icon-small" onclick="openEditGanttModal('${proj.id}', '', '${parent.id}', 'parent')">✏️</button>
+                     <button class="btn-add-small" onclick="openAddChildModal('${proj.id}', '${parent.id}')" ${parent.completed ? 'disabled' : ''}>+ 子任務</button>
+                </div>
+            </div>
+            <div style="font-size: 0.7rem; color: var(--text-secondary); margin-bottom: 8px;">範圍：${parent.startDate} ~ ${parent.endDate}</div>
+            <div class="children-list">
+                ${childrenHtml || '<div style="font-size: 0.75rem; color: gray; margin-left: 20px;">尚無子任務</div>'}
+            </div>
+        `;
+        container.appendChild(pDiv);
+    });
+}
+
+function openAddChildModal(projId, parentId) {
+    const parent = state.ganttSystem.projects.find(p => p.id === projId).parents.find(p => p.id === parentId);
+    document.getElementById('childProjectId').value = projId;
+    document.getElementById('childParentId').value = parentId;
+    document.getElementById('childStartDate').min = parent.startDate;
+    document.getElementById('childStartDate').max = parent.endDate;
+    document.getElementById('childEndDate').min = parent.startDate;
+    document.getElementById('childEndDate').max = parent.endDate;
+    els.gantt.childModal.el.classList.remove('hidden');
+}
+
+function handleAddChildTaskSubmit(e) {
+    e.preventDefault();
+    const projId = document.getElementById('childProjectId').value;
+    const parentId = document.getElementById('childParentId').value;
+    const proj = state.ganttSystem.projects.find(p => p.id === projId);
+    const parent = proj.parents.find(p => p.id === parentId);
+
+    const child = {
+        id: `c-${Date.now()}`,
+        name: document.getElementById('childName').value,
+        score: parseInt(document.getElementById('childScore').value),
+        startDate: document.getElementById('childStartDate').value,
+        endDate: document.getElementById('childEndDate').value,
+        importance: document.getElementById('childImportance').value,
+        completed: false
+    };
+
+    parent.children.push(child);
+    saveState();
+    els.gantt.childModal.el.classList.add('hidden');
+    viewProjectDetail(projId);
+}
+
+function toggleChildTask(projId, parentId, childId, isChecked) {
+    const proj = state.ganttSystem.projects.find(p => p.id === projId);
+    const parent = proj.parents.find(p => p.id === parentId);
+    const child = parent.children.find(c => c.id === childId);
+
+    if (child.completed && !isChecked) {
+        // Unchecking is allowed but subtract points
+        state.stockPrice -= child.score;
+        child.completed = false;
+    } else if (!child.completed && isChecked) {
+        // Calculating score
+        let totalGain = child.score;
+        const todayStr = getLocalDateStr();
+        if (todayStr < child.endDate) totalGain += 5; // Early bonus
+
+        if (child.importance === 'importance-dark-red') totalGain += 4;
+        else if (child.importance === 'importance-light-red') totalGain += 2;
+
+        state.stockPrice += totalGain;
+        child.completed = true;
+    }
+
+    saveState();
+    viewProjectDetail(projId);
+}
+
+function toggleParentTask(projId, parentId, isChecked) {
+    const proj = state.ganttSystem.projects.find(p => p.id === projId);
+    const parent = proj.parents.find(p => p.id === parentId);
+
+    if (parent.completed && !isChecked) {
+        state.stockPrice -= parent.score;
+        parent.completed = false;
+    } else if (!parent.completed && isChecked) {
+        let totalGain = parent.score;
+        const todayStr = getLocalDateStr();
+        if (todayStr < parent.endDate) totalGain += 10; // Parent early bonus
+
+        state.stockPrice += totalGain;
+        parent.completed = true;
+
+        // Check project completion
+        if (proj.parents.every(p => p.completed)) {
+            state.stockPrice += proj.score;
+            proj.completed = true;
+            alert(`恭喜完成企劃 [${proj.name}]！獲得 ${proj.score} 分`);
+        }
+    }
+
+    saveState();
+    viewProjectDetail(projId);
+}
+
+// Global functions for onclick (since they are in HTML strings)
+window.viewProjectDetail = viewProjectDetail;
+window.toggleChildTask = toggleChildTask;
+window.toggleParentTask = toggleParentTask;
+window.openAddChildModal = openAddChildModal;
+window.openEditGanttModal = openEditGanttModal;
+window.openEditGanttProjectModal = openEditGanttProjectModal;
+
 function mapImportance(imp) {
     const map = { critical: '重要', high: '還好', medium: '輕微', low: '不重要', daily: '日常' };
     return map[imp] || imp;
 }
+
+// --- Update Original init ---
+const originalInit = init;
+init = function () {
+    originalInit();
+    setupGanttListeners();
+};
 
 // Start
 init();

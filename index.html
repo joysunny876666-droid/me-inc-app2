@@ -43,6 +43,8 @@
                 <!-- Search Bar -->
                 <div class="search-container"
                     style="margin-top: 16px; display: flex; justify-content: center; gap: 8px;">
+                    <button id="navGanttBtn" class="btn-secondary"
+                        style="padding: 8px 16px; font-size: 0.9rem; margin-right: 4px;">甘特圖</button>
                     <button id="navAccountingBtn" class="btn-secondary"
                         style="padding: 8px 16px; font-size: 0.9rem;">記帳</button>
                     <input type="date" id="searchDateInput" style="padding: 8px; width: auto;">
@@ -541,6 +543,210 @@
                     </div>
                     <div id="accDayList"></div>
                 </div>
+            </div>
+        </div>
+
+        <!-- Gantt System Views -->
+        <!-- 1. Gantt Main View -->
+        <div id="ganttMainView" class="view hidden">
+            <header class="header sub-page-header">
+                <button class="icon-btn" id="backFromGanttMainBtn">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M19 12H5M12 19l-7-7 7-7" />
+                    </svg>
+                </button>
+                <div class="header-title">甘特圖系統</div>
+                <button id="openAddProjectBtn" class="icon-btn">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 5v14M5 12h14" />
+                    </svg>
+                </button>
+            </header>
+            <main class="content" style="padding: 16px;">
+                <div id="projectList" class="task-list">
+                    <!-- Project Cards Injected via JS -->
+                </div>
+            </main>
+        </div>
+
+        <!-- 2. Add Project View -->
+        <div id="ganttAddProjectView" class="view hidden">
+            <header class="header sub-page-header">
+                <button class="icon-btn" id="backFromAddProjectBtn">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M19 12H5M12 19l-7-7 7-7" />
+                    </svg>
+                </button>
+                <div class="header-title">新增企劃</div>
+                <div style="width: 24px;"></div>
+            </header>
+            <main class="form-content">
+                <form id="addProjectForm">
+                    <div class="form-group">
+                        <label for="projName">企劃名稱</label>
+                        <input type="text" id="projName" required placeholder="例如：新產品開發">
+                    </div>
+                    <div class="form-group">
+                        <label for="projScore">完成得分</label>
+                        <input type="number" id="projScore" required value="100">
+                    </div>
+                    <div class="form-group">
+                        <label>企劃時間範圍</label>
+                        <div style="display: flex; gap: 8px;">
+                            <input type="date" id="projStartDate" required>
+                            <input type="date" id="projEndDate" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>父任務清單</label>
+                        <div id="parentTaskListContainer" style="display: flex; flex-direction: column; gap: 10px;">
+                            <!-- Parent Task Inputs Injected -->
+                        </div>
+                        <button type="button" id="addParentTaskSlotBtn" class="btn-secondary small"
+                            style="margin-top: 10px;">+ 新增父任務</button>
+                    </div>
+                    <div class="form-actions-page">
+                        <button type="submit" class="btn-confirm">儲存企劃</button>
+                    </div>
+                </form>
+            </main>
+        </div>
+
+        <!-- 3. Project Detail View -->
+        <div id="ganttProjectDetailView" class="view hidden">
+            <header class="header sub-page-header">
+                <button class="icon-btn" id="backFromProjDetailBtn">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M19 12H5M12 19l-7-7 7-7" />
+                    </svg>
+                </button>
+                <div id="projDetailTitle" class="header-title">企劃進度</div>
+                <div style="width: 24px;"></div>
+            </header>
+            <main class="content" style="padding: 16px;">
+                <div id="projDetailContent">
+                    <!-- Hierarchy Injected via JS -->
+                </div>
+            </main>
+        </div>
+
+        <!-- 4. Add Child Task Modal -->
+        <div id="addChildTaskModal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>新增子任務</h3>
+                    <button id="closeChildTaskModalBtn" class="close-btn">&times;</button>
+                </div>
+                <form id="addChildTaskForm" class="form-content"
+                    style="padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+                    <input type="hidden" id="childParentId">
+                    <input type="hidden" id="childProjectId">
+                    <div class="form-group">
+                        <label for="childName">任務名稱</label>
+                        <input type="text" id="childName" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="childScore">完成得分</label>
+                        <input type="number" id="childScore" required value="10">
+                    </div>
+                    <div class="form-group">
+                        <label>時間範圍</label>
+                        <div style="display: flex; gap: 8px;">
+                            <input type="date" id="childStartDate" required>
+                            <input type="date" id="childEndDate" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="childImportance">重要程度</label>
+                        <select id="childImportance">
+                            <option value="importance-dark-red">深紅 (+4分)</option>
+                            <option value="importance-light-red">淺紅 (+2分)</option>
+                            <option value="importance-green">綠色 (+0分)</option>
+                        </select>
+                    </div>
+                    <div class="form-actions-page">
+                        <button type="submit" class="btn-confirm">確認新增</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- 5. Edit Gantt Task Modal -->
+        <div id="editGanttTaskModal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>編輯任務</h3>
+                    <button id="closeEditGanttModalBtn" class="close-btn">&times;</button>
+                </div>
+                <form id="editGanttTaskForm" class="form-content"
+                    style="padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+                    <input type="hidden" id="editGanttTaskId">
+                    <input type="hidden" id="editGanttParentId">
+                    <input type="hidden" id="editGanttProjectId">
+                    <input type="hidden" id="editGanttType"> <!-- 'parent' or 'child' -->
+                    <div class="form-group">
+                        <label for="editGanttName">名稱</label>
+                        <input type="text" id="editGanttName" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="editGanttScore">完成得分</label>
+                        <input type="number" id="editGanttScore" required>
+                    </div>
+                    <div class="form-group">
+                        <label>時間範圍</label>
+                        <div style="display: flex; gap: 8px;">
+                            <input type="date" id="editGanttStart" required>
+                            <input type="date" id="editGanttEnd" required>
+                        </div>
+                    </div>
+                    <div id="editGanttImportanceGroup" class="form-group">
+                        <label for="editGanttImportance">重要程度</label>
+                        <select id="editGanttImportance">
+                            <option value="importance-dark-red">深紅 (+4分)</option>
+                            <option value="importance-light-red">淺紅 (+2分)</option>
+                            <option value="importance-green">綠色 (+0分)</option>
+                        </select>
+                    </div>
+                    <div class="form-actions-page">
+                        <button type="submit" class="btn-confirm">儲存變更</button>
+                        <button type="button" id="deleteGanttTaskBtn" class="btn-cancel"
+                            style="background: rgba(239, 68, 68, 0.1); color: var(--accent-red); border-color: var(--accent-red);">刪除項目</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- 6. Edit Gantt Project Modal -->
+        <div id="editGanttProjectModal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>編輯企劃</h3>
+                    <button id="closeEditGanttProjectModalBtn" class="close-btn">&times;</button>
+                </div>
+                <form id="editGanttProjectForm" class="form-content"
+                    style="padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+                    <input type="hidden" id="editProjId">
+                    <div class="form-group">
+                        <label for="editProjName">企劃名稱</label>
+                        <input type="text" id="editProjName" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="editProjScore">完成總分</label>
+                        <input type="number" id="editProjScore" required>
+                    </div>
+                    <div class="form-group">
+                        <label>總時間範圍</label>
+                        <div style="display: flex; gap: 8px;">
+                            <input type="date" id="editProjStart" required>
+                            <input type="date" id="editProjEnd" required>
+                        </div>
+                    </div>
+                    <div class="form-actions-page">
+                        <button type="submit" class="btn-confirm">儲存企劃變更</button>
+                        <button type="button" id="deleteGanttProjectBtn" class="btn-cancel"
+                            style="background: rgba(239, 68, 68, 0.1); color: var(--accent-red); border-color: var(--accent-red);">刪除整個企劃</button>
+                    </div>
+                </form>
             </div>
         </div>
 
