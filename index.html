@@ -33,7 +33,7 @@
         <!-- Start View (Dashboard) -->
         <div id="startView" class="view active">
             <header class="header">
-                <div class="logo">Me Inc. <span style="font-size: 0.6rem; opacity: 0.3;">v3.5</span></div>
+                <div class="logo">Me Inc. <span style="font-size: 0.6rem; opacity: 0.3;">v3.6</span></div>
                 <div class="current-price-container">
                     <span class="price-label">當前股價</span>
                     <h1 id="currentPrice" class="price-value">100.00</h1>
@@ -741,6 +741,13 @@
                             <input type="date" id="editProjEnd" required>
                         </div>
                     </div>
+
+                    <div id="editProjParentList"
+                        style="margin-top: 10px; display: flex; flex-direction: column; gap: 10px;">
+                        <!-- 新增的父任務會出現在這裡 -->
+                    </div>
+                    <button type="button" id="editProjAddParentBtn" class="btn-add-small"
+                        style="align-self: flex-start; margin-top: 5px;">+ 新增父任務</button>
                     <div class="form-actions-page">
                         <button type="submit" class="btn-confirm">儲存企劃變更</button>
                         <button type="button" id="deleteGanttProjectBtn" class="btn-cancel"

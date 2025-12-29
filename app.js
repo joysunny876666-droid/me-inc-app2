@@ -101,7 +101,9 @@ const els = {
             el: document.getElementById('editGanttProjectModal'),
             form: document.getElementById('editGanttProjectForm'),
             closeBtn: document.getElementById('closeEditGanttProjectModalBtn'),
-            deleteBtn: document.getElementById('deleteGanttProjectBtn')
+            deleteBtn: document.getElementById('deleteGanttProjectBtn'),
+            parentList: document.getElementById('editProjParentList'),
+            addParentBtn: document.getElementById('editProjAddParentBtn')
         }
     },
     dashboard: {
@@ -1929,6 +1931,7 @@ function setupGanttListeners() {
     if (g.projEditModal.closeBtn) g.projEditModal.closeBtn.onclick = () => g.projEditModal.el.classList.add('hidden');
     if (g.projEditModal.form) g.projEditModal.form.onsubmit = handleEditGanttProjectSubmit;
     if (g.projEditModal.deleteBtn) g.projEditModal.deleteBtn.onclick = handleDeleteGanttProject;
+    if (g.projEditModal.addParentBtn) g.projEditModal.addParentBtn.onclick = addParentTaskSlotToEdit;
 }
 function openEditGanttProjectModal(projId) {
     const proj = state.ganttSystem.projects.find(p => p.id === projId);
@@ -1940,7 +1943,29 @@ function openEditGanttProjectModal(projId) {
     document.getElementById('editProjStart').value = proj.startDate;
     document.getElementById('editProjEnd').value = proj.endDate;
 
+    els.gantt.projEditModal.parentList.innerHTML = ''; // Clear for new additions
     els.gantt.projEditModal.el.classList.remove('hidden');
+}
+
+function addParentTaskSlotToEdit() {
+    const container = els.gantt.projEditModal.parentList;
+    const id = Date.now();
+    const div = document.createElement('div');
+    div.className = 'form-group parent-slot-edit'; // Use distinct class
+    div.style = 'border: 1px solid var(--border-color); padding: 10px; border-radius: 8px; margin-bottom: 5px;';
+    div.innerHTML = `
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <span style="font-size: 0.8rem; opacity: 0.7;">新增父任務</span>
+            <button type="button" class="btn-icon-small" onclick="this.parentElement.parentElement.remove()">🗑️</button>
+        </div>
+        <input type="text" placeholder="父任務名稱" class="parent-name" required style="margin-bottom: 8px;">
+        <input type="number" placeholder="完成得分" class="parent-score" required value="50" style="margin-bottom: 8px;">
+        <div style="display: flex; gap: 8px;">
+            <input type="date" class="parent-start" required>
+            <input type="date" class="parent-end" required>
+        </div>
+    `;
+    container.appendChild(div);
 }
 
 function handleEditGanttProjectSubmit(e) {
@@ -1952,6 +1977,23 @@ function handleEditGanttProjectSubmit(e) {
     proj.score = parseInt(document.getElementById('editProjScore').value);
     proj.startDate = document.getElementById('editProjStart').value;
     proj.endDate = document.getElementById('editProjEnd').value;
+
+    // Handle new parent tasks
+    const newParentSlots = document.querySelectorAll('.parent-slot-edit');
+    const newParents = Array.from(newParentSlots).map((slot, index) => ({
+        id: `p-${Date.now()}-${index}`,
+        name: slot.querySelector('.parent-name').value,
+        score: parseInt(slot.querySelector('.parent-score').value),
+        startDate: slot.querySelector('.parent-start').value,
+        endDate: slot.querySelector('.parent-end').value,
+        children: [],
+        completed: false
+    }));
+
+    if (newParents.length > 0) {
+        proj.parents.push(...newParents);
+        // Resort if needed? Usually they are added at the end.
+    }
 
     saveState();
     els.gantt.projEditModal.el.classList.add('hidden');
