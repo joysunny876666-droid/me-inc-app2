@@ -410,6 +410,18 @@ function checkDailyPenaltiesOnLoad() {
         curr.setDate(curr.getDate() + 1);
     }
     state.lastLoginDate = todayStr;
+
+    // Gantt Project Penalties
+    if (state.ganttSystem && state.ganttSystem.projects) {
+        state.ganttSystem.projects.forEach(proj => {
+            if (!proj.completed && todayStr > proj.endDate && !proj.penaltyApplied) {
+                state.stockPrice -= proj.score;
+                proj.penaltyApplied = true;
+                console.log(`Penalty applied for project: ${proj.name}`);
+            }
+        });
+    }
+
     saveState();
 }
 
@@ -2286,9 +2298,6 @@ function toggleChildTask(projId, parentId, childId, isChecked) {
     } else if (!child.completed && isChecked) {
         // Calculating score
         let totalGain = child.score;
-        const todayStr = getLocalDateStr();
-        if (todayStr < child.endDate) totalGain += 5; // Early bonus
-
         if (child.importance === 'importance-dark-red') totalGain += 4;
         else if (child.importance === 'importance-light-red') totalGain += 2;
 
@@ -2309,17 +2318,38 @@ function toggleParentTask(projId, parentId, isChecked) {
         parent.completed = false;
     } else if (!parent.completed && isChecked) {
         let totalGain = parent.score;
-        const todayStr = getLocalDateStr();
-        if (todayStr < parent.endDate) totalGain += 10; // Parent early bonus
-
         state.stockPrice += totalGain;
         parent.completed = true;
 
         // Check project completion
         if (proj.parents.every(p => p.completed)) {
-            state.stockPrice += proj.score;
+            const todayStr = getLocalDateStr();
+            const startStr = proj.startDate;
+            const endStr = proj.endDate;
+            const startD = new Date(startStr);
+            const endD = new Date(endStr);
+            const todayD = new Date(todayStr);
+
+            // total duration in days (inclusive)
+            const totalDays = Math.floor((endD - startD) / (1000 * 60 * 60 * 24)) + 1;
+            let finalBonus = 0;
+            let bonusMsg = '';
+
+            if (totalDays > 0) {
+                const elapsedDays = Math.floor((todayD - startD) / (1000 * 60 * 60 * 24)) + 1;
+
+                if (elapsedDays <= totalDays / 3) {
+                    finalBonus = Math.floor(proj.score * 0.5); // Part 1: +50%
+                    bonusMsg = ` (獲得額外 1/2 獎勵 +${finalBonus})`;
+                } else if (elapsedDays <= (2 * totalDays) / 3) {
+                    finalBonus = Math.floor(proj.score / 3); // Part 2: +33%
+                    bonusMsg = ` (獲得額外 1/3 獎勵 +${finalBonus})`;
+                }
+            }
+
+            state.stockPrice += proj.score + finalBonus;
             proj.completed = true;
-            alert(`恭喜完成企劃 [${proj.name}]！獲得 ${proj.score} 分`);
+            alert(`恭喜完成企劃 [${proj.name}]！獲得 ${proj.score + finalBonus} 分${bonusMsg}`);
         }
     }
 
