@@ -37,10 +37,8 @@ body {
     background-color: var(--bg-color);
     display: flex;
     flex-direction: column;
-    height: 100vh;
-    max-height: 100vh;
+    min-height: 100vh;
     position: relative;
-    overflow: hidden;
 }
 
 /* Views */
@@ -259,8 +257,6 @@ body {
 .dashboard-content,
 .schedule-content,
 .content {
-    flex: 1;
-    overflow-y: auto;
     padding: 20px;
 }
 
