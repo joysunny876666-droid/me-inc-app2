@@ -1210,3 +1210,132 @@ select:focus {
         overflow-y: auto;
     }
 }
+
+/* --- Media Query: Mobile Optimization (Max-width: 767px) --- */
+@media (max-width: 767px) {
+
+    /* Global Mobile Tweaks */
+    body {
+        overflow-x: hidden;
+        /* Prevent body sway */
+        padding-bottom: 20px;
+        /* Space for gestures */
+    }
+
+    /* 1. Horizontal Dashboard Layout (Carousel) */
+    #startView {
+        display: flex;
+        flex-direction: row;
+        overflow-x: auto;
+        overflow-y: hidden;
+        /* Main vertical scroll handled inside cards */
+        scroll-snap-type: x mandatory;
+        scroll-behavior: smooth;
+        height: calc(100vh - 140px);
+        /* Adjust based on header */
+        width: 100vw;
+        gap: 16px;
+        padding: 0 16px 20px;
+        /* Horizontal padding + bottom breathing room */
+        align-items: flex-start;
+    }
+
+    /* Force sections to be slides */
+    #startView .charts-section,
+    #startView .tasks-section {
+        flex: 0 0 90vw;
+        /* 90% width to see next card peek */
+        width: 90vw;
+        scroll-snap-align: center;
+        height: 100%;
+        overflow-y: auto;
+        /* Internal scrolling */
+        padding-bottom: 40px;
+        /* Spacer for internal scroll */
+    }
+
+    /* 2. Hero Price Display */
+    .header {
+        padding: 16px;
+        margin-bottom: 0;
+    }
+
+    .current-price-container {
+        flex-direction: column;
+        align-items: flex-start;
+        background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(30, 64, 175, 0.1));
+        padding: 16px;
+        border-radius: 16px;
+        margin: 0 16px 16px;
+        /* External margin to fit design */
+        border: 1px solid rgba(59, 130, 246, 0.3);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    }
+
+    .price-value {
+        font-size: 3rem;
+        /* Hero Size */
+        margin: 8px 0;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Adjust #startView height to account for Hero Header */
+    #startView {
+        /* Reset margins/padding context */
+        margin-top: 0;
+        padding-top: 0;
+        /* Height calculation might need tuning depending on DOM order. 
+           Assuming .header is outside #startView. If inside, this needs tweak.
+           Actually #startView CONTAINS the sections. .header is separate.
+        */
+    }
+
+    /* 3. Card Styling for Charts & Tasks */
+    .chart-container,
+    .tasks-column {
+        background: var(--card-bg);
+        border: none;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+        /* Deep shadow */
+        border-radius: 20px;
+        /* Rounder */
+        padding: 20px;
+        margin-bottom: 24px;
+        /* Vertical gap between items in slide */
+    }
+
+    /* 4. Chart Visibility */
+    .chart-container {
+        min-height: 250px;
+        height: auto;
+    }
+
+    /* 5. Task Items (More touch-friendly) */
+    .task-item {
+        padding: 12px;
+        margin-bottom: 12px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        border-radius: 12px;
+    }
+
+    .task-name {
+        font-size: 1.1rem;
+        /* Larger text */
+        margin-bottom: 4px;
+        display: block;
+    }
+
+    .task-meta {
+        font-size: 0.85rem;
+        opacity: 0.8;
+    }
+
+    /* Buttons */
+    .btn-secondary,
+    .btn-primary {
+        padding: 12px 20px;
+        font-size: 1rem;
+        border-radius: 12px;
+    }
+}
