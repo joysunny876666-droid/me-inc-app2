@@ -1223,7 +1223,8 @@ select:focus {
     }
 
     /* 1. Horizontal Dashboard Layout (Carousel) */
-    #startView {
+    /* Target the content wrapper, NOT the whole view (keep header static) */
+    .dashboard-content {
         display: flex;
         flex-direction: row;
         overflow-x: auto;
@@ -1231,8 +1232,8 @@ select:focus {
         /* Main vertical scroll handled inside cards */
         scroll-snap-type: x mandatory;
         scroll-behavior: smooth;
-        height: calc(100vh - 140px);
-        /* Adjust based on header */
+        height: calc(100vh - 180px);
+        /* Adjust based on header height (approx 180px with hero) */
         width: 100vw;
         gap: 16px;
         padding: 0 16px 20px;
@@ -1241,8 +1242,8 @@ select:focus {
     }
 
     /* Force sections to be slides */
-    #startView .charts-section,
-    #startView .tasks-section {
+    .dashboard-content .charts-section,
+    .dashboard-content .tasks-section {
         flex: 0 0 90vw;
         /* 90% width to see next card peek */
         width: 90vw;
@@ -1280,15 +1281,7 @@ select:focus {
     }
 
     /* Adjust #startView height to account for Hero Header */
-    #startView {
-        /* Reset margins/padding context */
-        margin-top: 0;
-        padding-top: 0;
-        /* Height calculation might need tuning depending on DOM order. 
-           Assuming .header is outside #startView. If inside, this needs tweak.
-           Actually #startView CONTAINS the sections. .header is separate.
-        */
-    }
+
 
     /* 3. Card Styling for Charts & Tasks */
     .chart-container,
