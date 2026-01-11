@@ -2825,3 +2825,30 @@ function mapImportance(imp) {
 
 // Start
 init();
+// --- System Updates ---
+window.forceUpdate = async function () {
+    if (!confirm('是否強制清除快取並更新至最新版本？(將會重新整理頁面)')) return;
+
+    alert('正在清理系統快取...');
+
+    try {
+        // 1. Unregister Service Workers
+        if ('serviceWorker' in navigator) {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            for (const registration of registrations) {
+                await registration.unregister();
+            }
+        }
+
+        // 2. Clear Cache Storage
+        if ('caches' in window) {
+            const keys = await caches.keys();
+            await Promise.all(keys.map(key => caches.delete(key)));
+        }
+
+        alert('清理完成！即將重啟...');
+        window.location.reload(true);
+    } catch (e) {
+        alert('清理失敗，請手動清除瀏覽器資料: ' + e.message);
+    }
+};
