@@ -490,7 +490,8 @@ select:focus {
 }
 
 .modal-content {
-    background: var(--card-bg);
+    background: #1e293b;
+    /* Ensure opaque background */
     width: 90%;
     max-width: 400px;
     border-radius: 16px;
