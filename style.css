@@ -1,29 +1,61 @@
 /* CSS content as planned */
 :root {
-    --bg-color: #0d1117;
-    --card-bg: #161b22;
-    --text-primary: #e6edf3;
-    --text-secondary: #8b949e;
-    --accent-blue: #3b82f6;
-    --accent-green: #10b981;
-    --accent-red: #ef4444;
-    --border-color: #30363d;
-    --input-bg: #0d1117;
+    /* Premium Dark Theme Palette */
+    --bg-primary: #0f172a;
+    /* Rich dark blue-gray */
+    --bg-secondary: #1e293b;
+    /* Slightly lighter blue-gray for cards */
+    --bg-tertiary: #334155;
+    /* Hover states */
+
+    --text-primary: #f8fafc;
+    /* Crisp white */
+    --text-secondary: #94a3b8;
+    /* Muted blue-gray */
+
+    --accent-primary: #3b82f6;
+    /* Vibrant Blue */
+    --accent-hover: #2563eb;
+    --accent-success: #10b981;
+    /* Emerald */
+    --accent-warning: #f59e0b;
+    /* Amber */
+    --accent-danger: #ef4444;
+    /* Red */
+    --accent-purple: #8b5cf6;
+    /* Violet */
+
+    --border-color: #334155;
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+
+    --header-height: auto;
+    --max-width: 1200px;
+    /* Increased for desktop responsiveness */
 }
 
 * {
     box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
     margin: 0;
     padding: 0;
 }
 
 body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    background-color: var(--bg-color);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background-color: var(--bg-primary);
     color: var(--text-primary);
+    min-height: 100vh;
     display: flex;
     justify-content: center;
-    min-height: 100vh;
+    overflow-y: auto;
+    /* Allow body scroll if needed, though app-container handles most */
 }
 
 /* Global Utility */
@@ -33,12 +65,14 @@ body {
 
 .app-container {
     width: 100%;
-    max-width: 480px;
-    background-color: var(--bg-color);
+    max-width: var(--max-width);
+    min-height: 100vh;
+    background-color: var(--bg-primary);
     display: flex;
     flex-direction: column;
-    min-height: 100vh;
     position: relative;
+    box-shadow: 0 0 30px rgba(0, 0, 0, 0.5);
+    /* Shadow for desktop framing */
 }
 
 /* Views */
@@ -46,22 +80,15 @@ body {
     display: flex;
     flex-direction: column;
     flex: 1;
+    width: 100%;
     transition: opacity 0.3s ease;
+    padding-bottom: 20px;
 }
 
-.view.hidden {
-    display: none;
-}
-
-/* Header */
 .header {
-    padding: 20px;
-    text-align: center;
+    background-color: var(--bg-secondary);
+    /* Specific header bg */
     border-bottom: 1px solid var(--border-color);
-    background: var(--bg-color);
-    position: sticky;
-    top: 0;
-    z-index: 10;
 }
 
 .sub-page-header {
@@ -124,6 +151,7 @@ body {
     padding: 12px;
     border: 1px solid var(--border-color);
     position: relative;
+    overflow: hidden;
 }
 
 .line-chart {
@@ -248,8 +276,11 @@ body {
     border: 1px solid var(--border-color);
 }
 
-.nav-btn:active {
+.nav-btn:active,
+.btn-secondary.small.active {
     opacity: 0.8;
+    background: var(--accent-blue);
+    color: white;
 }
 
 /* Forms */
@@ -283,6 +314,11 @@ select {
     color: var(--text-primary);
     font-size: 1rem;
     outline: none;
+}
+
+option {
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
 }
 
 input:focus,
@@ -389,11 +425,27 @@ select:focus {
     border-radius: 8px;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
+    align-items: stretch;
+    /* Changed from center to stretch */
+    justify-content: flex-start;
+    /* Changed from center to start */
     cursor: pointer;
     position: relative;
     border: 1px solid var(--border-color);
+    padding: 4px;
+    overflow: hidden;
+}
+
+.calendar-task-preview {
+    font-size: 0.65rem;
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 3px;
+    padding: 2px 4px;
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .calendar-day.empty {
@@ -836,4 +888,325 @@ select:focus {
     border-radius: 4px;
     color: white;
     cursor: pointer;
+}
+
+/* Weekly Schedule View */
+.weekly-layout {
+    display: flex;
+    gap: 12px;
+    flex: 1;
+    overflow: hidden;
+    min-height: 0;
+}
+
+.weekly-schedule-container {
+    flex: 3;
+    overflow-x: auto;
+    overflow-y: auto;
+    background: var(--bg-color);
+    position: relative;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+}
+
+.untimed-sidebar {
+    flex: 1;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    min-width: 140px;
+}
+
+.sidebar-header {
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.05);
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-align: center;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.sidebar-section {
+    padding: 8px;
+}
+
+.section-title {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+    padding-left: 4px;
+    border-left: 2px solid var(--accent-blue);
+}
+
+.untimed-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.untimed-item {
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: transform 0.1s, border-color 0.2s;
+}
+
+.untimed-item:hover {
+    border-color: var(--accent-blue);
+    transform: translateY(-1px);
+}
+
+.untimed-item.moving {
+    border-color: var(--accent-blue);
+    background: rgba(59, 130, 246, 0.1);
+    animation: pulse 1s infinite alternate;
+}
+
+.untimed-item.completed {
+    opacity: 0.6;
+    text-decoration: line-through;
+    background: rgba(16, 185, 129, 0.05);
+}
+
+.weekly-grid {
+    display: grid;
+    grid-template-columns: 50px repeat(7, 1fr);
+    min-width: 600px;
+    position: relative;
+}
+
+.weekly-time-col {
+    background: var(--card-bg);
+    border-right: 1px solid var(--border-color);
+    position: sticky;
+    left: 0;
+    z-index: 5;
+}
+
+.weekly-header-cell {
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-color);
+    background: var(--card-bg);
+}
+
+.weekly-header-cell.today {
+    color: var(--accent-blue);
+    background: rgba(59, 130, 246, 0.1);
+}
+
+.weekly-hour-cell {
+    height: 50px;
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.05);
+    border-right: 1px solid var(--border-color);
+    position: relative;
+}
+
+.weekly-time-label {
+    height: 50px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    padding-top: 4px;
+}
+
+.weekly-task-block {
+    position: absolute;
+    left: 4px;
+    right: 4px;
+    background: var(--accent-blue);
+    border-radius: 4px;
+    padding: 2px 4px;
+    font-size: 0.7rem;
+    color: white;
+    overflow: hidden;
+    cursor: pointer;
+    z-index: 2;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.weekly-task-block.completed {
+    background: var(--accent-green);
+    text-decoration: line-through;
+    opacity: 0.7;
+}
+
+.weekly-task-block.moving {
+    animation: pulse 1s infinite alternate;
+    z-index: 10;
+    box-shadow: 0 0 10px var(--accent-blue);
+}
+
+@keyframes pulse {
+    from {
+        opacity: 0.7;
+        transform: scale(0.98);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1.02);
+    }
+}
+
+.move-task-hint {
+    background: var(--accent-blue);
+    color: white;
+    padding: 10px;
+    text-align: center;
+    font-size: 0.9rem;
+    border-radius: 8px;
+    margin-bottom: 12px;
+}
+
+.weekly-hour-cell.move-target:hover {
+    background: rgba(16, 185, 129, 0.2);
+    cursor: copy;
+}
+
+/* --- Responsive Layouts --- */
+
+/* Charts Section */
+.charts-section {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* Tasks Section */
+.tasks-section {
+    padding: 0 16px 20px;
+    display: flex;
+    flex-direction: column;
+    /* Default: Stacked (Mobile Portrait) */
+    gap: 16px;
+}
+
+.tasks-column {
+    background-color: var(--bg-secondary);
+    border-radius: var(--radius-lg);
+    padding: 16px;
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-color);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.tasks-column:hover {
+    box-shadow: var(--shadow-md);
+}
+
+/* --- Media Query: Desktop & Tablet Landscape (>= 768px) --- */
+@media (min-width: 768px) {
+
+    /* Header optimization */
+    .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 24px;
+    }
+
+    .current-price-container {
+        flex-direction: row;
+        align-items: baseline;
+        gap: 12px;
+    }
+
+    /* Charts Grid */
+    .charts-section {
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        /* Main chart wider */
+        grid-template-rows: auto auto;
+        gap: 20px;
+    }
+
+    /* Chart Containers */
+    .chart-container.line-chart {
+        grid-area: 1 / 1 / 2 / 2;
+    }
+
+    .chart-container.kline-chart {
+        grid-area: 2 / 1 / 3 / 2;
+    }
+
+    .chart-container.gantt-chart {
+        grid-area: 1 / 2 / 3 / 3;
+        height: 100%;
+        min-height: 0;
+    }
+
+    /* Tasks Grid - 3 Columns Side-by-Side */
+    .tasks-section {
+        flex-direction: row;
+        align-items: flex-start;
+    }
+
+    .tasks-column {
+        flex: 1;
+        min-height: 400px;
+        /* Ensure consistent height */
+    }
+}
+
+/* --- Media Query: Mobile Landscape (Max-height: 500px) --- */
+@media (max-height: 500px) and (orientation: landscape) {
+    .app-container {
+        flex-direction: row;
+    }
+
+    .header {
+        width: 60px;
+        /* Sidebar Header */
+        height: 100vh;
+        flex-direction: column;
+        overflow-y: auto;
+        position: sticky;
+        left: 0;
+        padding: 10px 4px;
+    }
+
+    .logo,
+    .price-label {
+        display: none;
+    }
+
+    /* Compact mode */
+    .current-price-container {
+        font-size: 0.8rem;
+    }
+
+    .view {
+        flex-direction: row;
+        flex-wrap: wrap;
+        overflow-y: auto;
+    }
+
+    .charts-section {
+        width: 50%;
+        overflow-y: auto;
+    }
+
+    .tasks-section {
+        width: 50%;
+        overflow-y: auto;
+    }
 }

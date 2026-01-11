@@ -241,12 +241,36 @@
                         <path d="M19 12H5M12 19l-7-7 7-7" />
                     </svg>
                 </button>
-                <div class="header-title">今日時程細節</div>
-                <div style="width:24px;"></div>
+                <div class="header-title" id="weeklyViewTitle">本週行程與移動</div>
+                <div style="display: flex; gap: 8px;">
+                    <button id="prevWeekBtn" class="icon-btn">&lt;</button>
+                    <button id="nextWeekBtn" class="icon-btn">&gt;</button>
+                </div>
             </header>
-            <div class="content">
-                <div id="focusedGanttList" class="focused-list">
-                    <!-- Dynamic Content -->
+            <div class="content"
+                style="padding: 10px; display: flex; flex-direction: column; height: calc(100vh - 80px);">
+                <div id="moveTaskHint" class="move-task-hint hidden">
+                    請點選下方空白處以移動項目
+                    <button id="cancelMoveBtn" class="btn-cancel small"
+                        style="margin-left: 10px; padding: 4px 8px;">取消</button>
+                </div>
+                <div class="weekly-layout">
+                    <div class="weekly-schedule-container">
+                        <div id="weeklyGrid" class="weekly-grid">
+                            <!-- Grid Header (Dates) and rows will be injected -->
+                        </div>
+                    </div>
+                    <div id="untimedSidebar" class="untimed-sidebar">
+                        <div class="sidebar-header">未排定時間</div>
+                        <div class="sidebar-section">
+                            <div class="section-title">本日無時間</div>
+                            <div id="untimedTodayList" class="untimed-list"></div>
+                        </div>
+                        <div class="sidebar-section">
+                            <div class="section-title">本週無時間</div>
+                            <div id="untimedWeeklyList" class="untimed-list"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -260,9 +284,18 @@
                     </svg>
                 </button>
                 <div class="header-title">數據統計</div>
-                <div style="width:24px;"></div>
+                <button id="resetStockBtn" class="icon-btn" title="清空股價">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path
+                            d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6" />
+                    </svg>
+                </button>
             </header>
             <main class="content" style="padding:16px;">
+                <div style="display: flex; justify-content: center; gap: 8px; margin-bottom: 16px;">
+                    <button id="dataYesterdayBtn" class="btn-secondary small active">昨日</button>
+                    <button id="dataTodayBtn" class="btn-secondary small">今日</button>
+                </div>
                 <h3 id="dataDateLabel" style="text-align:center; margin-bottom:16px; color:var(--text-secondary);"></h3>
 
                 <div class="data-summary-card">

@@ -28,6 +28,8 @@ let currentView = 'start';
 let currentMonth = new Date();
 let chartInstance = null;
 let kLineChartInstance = null;
+let weeklyStartDay = null; // Monday of the current viewing week
+let movingTask = null; // { task, sourceDate }
 
 // --- Firebase Initialization ---
 const firebaseConfig = {
@@ -43,13 +45,15 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
-// --- Helper: Local Date String (YYYY-MM-DD) ---
-function getLocalDateStr(dateObj = new Date()) {
-    const year = dateObj.getFullYear();
-    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-    const day = String(dateObj.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-}
+// --- Helper: Date Utilities ---
+const getLocalDateStr = (d = new Date()) => {
+    const offset = d.getTimezoneOffset() * 60000;
+    return new Date(d.getTime() - offset).toISOString().split('T')[0];
+};
+
+const getDayName = (dateStr) => {
+    return ['週日', '週一', '週二', '週三', '週四', '週五', '週六'][new Date(dateStr).getDay()];
+};
 
 // --- DOM Elements ---
 const els = {
@@ -69,6 +73,9 @@ const els = {
         scheduleBtn: document.getElementById('navScheduleBtn'),
         accountingBtn: document.getElementById('navAccountingBtn'),
         ganttBtn: document.getElementById('navGanttBtn'),
+        weeklyPrevBtn: document.getElementById('prevWeekBtn'),
+        weeklyNextBtn: document.getElementById('nextWeekBtn'),
+        cancelMoveBtn: document.getElementById('cancelMoveBtn')
     },
     backBtns: {
         fromAdd: document.getElementById('backFromAddBtn'),
@@ -114,7 +121,12 @@ const els = {
         importantList: document.getElementById('importantTaskList'),
         searchInput: document.getElementById('searchDateInput'),
         searchBtn: document.getElementById('searchBtn'),
-        focusedList: document.getElementById('focusedGanttList') // New List
+        focusedList: document.getElementById('focusedGanttList'), // Obsolete
+        weeklyGrid: document.getElementById('weeklyGrid'),
+        weeklyTitle: document.getElementById('weeklyViewTitle'),
+        moveHint: document.getElementById('moveTaskHint'),
+        untimedTodayList: document.getElementById('untimedTodayList'),
+        untimedWeeklyList: document.getElementById('untimedWeeklyList')
     },
     calendar: {
         label: document.getElementById('currentMonthLabel'),
@@ -182,7 +194,10 @@ const els = {
         bottomBackBtn: document.getElementById('bottomBackFromDataBtn'),
         dateLabel: document.getElementById('dataDateLabel'),
         totalChange: document.getElementById('dataTotalChange'),
-        tableContainer: document.getElementById('dataTableContainer')
+        tableContainer: document.getElementById('dataTableContainer'),
+        yesterdayBtn: document.getElementById('dataYesterdayBtn'),
+        todayBtn: document.getElementById('dataTodayBtn'),
+        resetBtn: document.getElementById('resetStockBtn')
     },
     accounting: {
         totalBalance: document.getElementById('totalBalance'),
@@ -247,14 +262,25 @@ function init() {
     setupEventListeners();
     setupEditListeners();
     setupAccountingListeners();
+    setupGanttListeners(); // Integrated directly
 
-    // Auto-refresh Time Table (every minute)
+    // Auto-refresh (every minute)
     setInterval(() => {
         if (currentView === 'start') renderStartPage();
     }, 60000);
 
     // Check immediate penalties every minute
     setInterval(checkImmediatePenalties, 60000);
+
+    // Initial check for weeklyStartDay to prevent navigation crashes
+    if (!weeklyStartDay) {
+        const now = new Date();
+        const day = now.getDay();
+        const diff = (day === 0 ? -6 : 1) - day;
+        const monday = new Date(now);
+        monday.setDate(now.getDate() + diff);
+        weeklyStartDay = monday;
+    }
 
     // Start Cloud Sync
     setupCloudSync();
@@ -277,6 +303,10 @@ function setupCloudSync() {
         // After data updates, check logic and render
         checkDailyPenaltiesOnLoad();
         checkImmediatePenalties();
+
+        // --- NEW: Automatic Cleanup ---
+        runAutomaticCleanup();
+
         renderView(currentView || 'start');
     }, (error) => {
         console.error("Sync error:", error);
@@ -310,9 +340,32 @@ function setupEventListeners() {
     if (els.backBtns.fromAdd) els.backBtns.fromAdd.onclick = () => renderView('start');
     if (els.backBtns.fromSchedule) els.backBtns.fromSchedule.onclick = () => renderView('start');
     if (els.backBtns.fromGantt) els.backBtns.fromGantt.onclick = () => renderView('start');
+    if (els.nav.weeklyPrevBtn) els.nav.weeklyPrevBtn.onclick = () => {
+        if (!weeklyStartDay) return;
+        weeklyStartDay.setDate(weeklyStartDay.getDate() - 7);
+        renderWeeklySchedule();
+    };
+    if (els.nav.weeklyNextBtn) els.nav.weeklyNextBtn.onclick = () => {
+        if (!weeklyStartDay) return;
+        weeklyStartDay.setDate(weeklyStartDay.getDate() + 7);
+        renderWeeklySchedule();
+    };
+    if (els.nav.cancelMoveBtn) els.nav.cancelMoveBtn.onclick = cancelMove;
     if (els.data.headerBackBtn) els.data.headerBackBtn.onclick = () => renderView('start');
     if (els.data.bottomBackBtn) els.data.bottomBackBtn.onclick = () => renderView('start');
-    if (els.data.navBtn) els.data.navBtn.onclick = () => renderView('data');
+    if (els.data.navBtn) els.data.navBtn.onclick = () => {
+        dataViewDate = 'yesterday';
+        renderView('data');
+    };
+    if (els.data.yesterdayBtn) els.data.yesterdayBtn.onclick = () => {
+        dataViewDate = 'yesterday';
+        renderDataView();
+    };
+    if (els.data.todayBtn) els.data.todayBtn.onclick = () => {
+        dataViewDate = 'today';
+        renderDataView();
+    };
+    if (els.data.resetBtn) els.data.resetBtn.onclick = resetStockPrice;
     if (els.nav.accountingBtn) els.nav.accountingBtn.onclick = () => renderView('accounting');
 
     // Chart Click Navigation
@@ -377,6 +430,71 @@ function setupEventListeners() {
     window.onclick = (e) => {
         if (els.modal.el && e.target === els.modal.el) els.modal.el.classList.add('hidden');
     };
+}
+
+// --- Automatic Cleanup Logic ---
+function runAutomaticCleanup() {
+    const today = new Date();
+    const todayStr = getLocalDateStr(today);
+
+    // 1. Cleanup Calendar Tasks (Completed > 30 days)
+    const thirtyDaysAgo = new Date(today);
+    thirtyDaysAgo.setDate(today.getDate() - 30);
+    const thirtyDaysAgoStr = getLocalDateStr(thirtyDaysAgo);
+
+    state.tasks = state.tasks.filter(t => {
+        // If mission and not complete, keep
+        if (t.isMission) {
+            const doneDates = t.completedHistory ? Object.keys(t.completedHistory) : [];
+            if (doneDates.length === 0) return true;
+        }
+
+        if (t.type === 'scheduled' && t.completedHistory) {
+            // Scheduled tasks usually have one completion date
+            const doneDates = Object.keys(t.completedHistory);
+            if (doneDates.length > 0) {
+                // Check if the latest completion is old
+                const lastDone = doneDates.sort().pop();
+                if (lastDone < thirtyDaysAgoStr) return false; // Delete
+            }
+        }
+        return true;
+    });
+
+    // 2. Cleanup Gantt Projects (Completed > 30 days)
+    if (state.ganttSystem && state.ganttSystem.projects) {
+        state.ganttSystem.projects = state.ganttSystem.projects.filter(p => {
+            if (p.completed && p.endDate < thirtyDaysAgoStr) return false;
+            return true;
+        });
+    }
+
+    // 3. Cleanup Accounting (Transaction > 60 days)
+    // And aggregate to historical expenses
+    const sixtyDaysAgo = new Date(today);
+    sixtyDaysAgo.setDate(today.getDate() - 60);
+    const sixtyDaysAgoStr = getLocalDateStr(sixtyDaysAgo);
+
+    // Initialize historical if missing
+    if (!state.accounting.historicalExpenses) state.accounting.historicalExpenses = {};
+
+    const keepTransactions = [];
+    state.accounting.transactions.forEach(t => {
+        if (t.date < sixtyDaysAgoStr) {
+            // It's old. Is it an expense?
+            if (t.amount < 0) {
+                // Aggregate
+                const monthKey = t.month || t.date.slice(0, 7); // Use date YYYY-MM
+                state.accounting.historicalExpenses[monthKey] = (state.accounting.historicalExpenses[monthKey] || 0) + Math.abs(t.amount);
+            }
+            // Drop it
+        } else {
+            keepTransactions.push(t);
+        }
+    });
+    state.accounting.transactions = keepTransactions;
+
+    saveState();
 }
 
 // --- Penalty Logic ---
@@ -468,16 +586,38 @@ function checkImmediatePenalties() {
 }
 
 // --- View Rendering ---
+const VIEW_MAP = {
+    'start': renderStartPage,
+    'schedule': () => renderCalendar(currentMonth),
+    'focusedGantt': () => {
+        if (!weeklyStartDay) {
+            const now = new Date();
+            const day = now.getDay();
+            const diff = (day === 0 ? -6 : 1) - day;
+            weeklyStartDay = new Date(now);
+            weeklyStartDay.setDate(now.getDate() + diff);
+        }
+        renderWeeklySchedule();
+    },
+    'data': renderDataView,
+    'accounting': renderAccountingView,
+    'ganttMain': renderGanttMainPage,
+    'add': () => { }, // No specific render fn
+    'ganttAddProject': () => { },
+    'ganttProjectDetail': () => { }
+};
+
 function renderView(viewName) {
-    currentView = viewName; // Update global state
-    Object.values(els.views).forEach(v => { if (v) v.classList.add('hidden'); });
-    if (els.views[viewName]) els.views[viewName].classList.remove('hidden');
-    if (viewName === 'start') renderStartPage();
-    if (viewName === 'schedule') renderCalendar(currentMonth);
-    if (viewName === 'focusedGantt') renderFocusedGantt();
-    if (viewName === 'data') renderDataView();
-    if (viewName === 'accounting') renderAccountingView();
-    if (viewName === 'ganttMain') renderGanttMainPage();
+    currentView = viewName;
+
+    // Toggle Visibility
+    Object.keys(els.views).forEach(key => {
+        const el = els.views[key];
+        if (el) el.classList.toggle('hidden', key !== viewName);
+    });
+
+    // Execute specific render logic
+    if (VIEW_MAP[viewName]) VIEW_MAP[viewName]();
 }
 
 // --- Accounting Logic ---
@@ -925,19 +1065,36 @@ function editAccountingTransaction(id) {
     }
 }
 
+function resetStockPrice() {
+    state.stockPrice = 100.00;
+    state.history = [];
+    saveState();
+    renderView('start');
+    alert('股價已重設為 100.00');
+}
+
+let dataViewDate = 'yesterday'; // 'yesterday' or 'today'
+
 function renderDataView() {
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = getLocalDateStr(yesterday);
+    const targetDate = new Date();
+    if (dataViewDate === 'yesterday') {
+        targetDate.setDate(targetDate.getDate() - 1);
+        els.data.yesterdayBtn.classList.add('active');
+        els.data.todayBtn.classList.remove('active');
+    } else {
+        els.data.todayBtn.classList.add('active');
+        els.data.yesterdayBtn.classList.remove('active');
+    }
+    const targetStr = getLocalDateStr(targetDate);
 
-    if (els.data.dateLabel) els.data.dateLabel.textContent = `${yesterdayStr} 數據回顧`;
+    if (els.data.dateLabel) els.data.dateLabel.textContent = `${targetStr} 數據回顧`;
 
-    const tasks = getTasksForDate(yesterdayStr);
+    const tasks = getTasksForDate(targetStr);
     let totalChange = 0;
 
     tasks.forEach(task => {
-        const isCompleted = task.completedHistory && task.completedHistory[yesterdayStr];
-        const isPenalized = task.penaltyHistory && task.penaltyHistory[yesterdayStr];
+        const isCompleted = task.completedHistory && task.completedHistory[targetStr];
+        const isPenalized = task.penaltyHistory && task.penaltyHistory[targetStr];
         if (isCompleted) totalChange += task.score;
         else if (isPenalized) totalChange -= task.score;
     });
@@ -956,13 +1113,13 @@ function renderDataView() {
                 <tr>
                     <th>項目</th>
                     <th style="text-align:center;">得分異動</th>
-                    <th style="text-align:right;">狀態</th>
+                    <th style="text-align:right;">操作</th>
                 </tr>
             </thead>
             <tbody>
                 ${tasks.map(task => {
-            const isCompleted = task.completedHistory && task.completedHistory[yesterdayStr];
-            const isPenalized = task.penaltyHistory && task.penaltyHistory[yesterdayStr];
+            const isCompleted = task.completedHistory && task.completedHistory[targetStr];
+            const isPenalized = task.penaltyHistory && task.penaltyHistory[targetStr];
 
             let scoreDisplay = '0';
             let statusText = '執行中';
@@ -973,17 +1130,23 @@ function renderDataView() {
                 statusText = '已完成';
                 statusClass = 'status-success';
             } else if (isPenalized) {
-                // If it was penalized, the score was subtracted
                 scoreDisplay = `-${task.score}`;
                 statusText = '自動扣分';
                 statusClass = 'status-warning';
             }
 
+            const canUndo = isCompleted || isPenalized;
+
             return `
                         <tr>
-                            <td>${task.name}</td>
+                            <td>
+                                <div>${task.name}</div>
+                                <div style="font-size:0.7rem; color:var(--text-secondary);">${statusText}</div>
+                            </td>
                             <td style="text-align:center; font-family:monospace; font-weight:600; color:${isPenalized ? 'var(--accent-red)' : (isCompleted ? 'var(--accent-green)' : 'inherit')}">${scoreDisplay}</td>
-                            <td style="text-align:right;"><span class="status-badge ${statusClass}">${statusText}</span></td>
+                            <td style="text-align:right;">
+                                ${canUndo ? `<button onclick="undoTaskAction(${task.id}, '${targetStr}')" class="btn-icon-small" title="撤銷">撤銷</button>` : '-'}
+                            </td>
                         </tr>
                     `;
         }).join('')}
@@ -993,66 +1156,303 @@ function renderDataView() {
     }
 }
 
-function renderFocusedGantt() {
-    const todayStr = getLocalDateStr();
-    const tasks = getTasksForDate(todayStr); // All today's tasks
-    // Filter only ranged tasks
-    const rangedTasks = tasks.filter(t => t.time && t.endTime);
+function undoTaskAction(taskId, dateStr) {
+    const task = state.tasks.find(t => t.id === taskId);
+    if (!task) return;
 
-    // Sort by time
-    rangedTasks.sort((a, b) => a.time.localeCompare(b.time));
+    if (confirm(`確定要撤銷 [${task.name}] 在 ${dateStr} 的加(扣)分嗎？`)) {
+        const isCompleted = task.completedHistory && task.completedHistory[dateStr];
+        const isPenalized = task.penaltyHistory && task.penaltyHistory[dateStr];
 
-    const container = els.dashboard.focusedList;
-    if (!container) return;
-    container.innerHTML = '';
+        if (isCompleted) {
+            state.stockPrice -= task.score;
+            delete task.completedHistory[dateStr];
+        } else if (isPenalized) {
+            state.stockPrice += task.score;
+            delete task.penaltyHistory[dateStr];
+        }
 
-    if (rangedTasks.length === 0) {
-        container.innerHTML = '<p style="text-align:center; color:gray; padding:20px;">今日無時段行程</p>';
-        return;
+        // Update history if it's today
+        const todayStr = getLocalDateStr();
+        const historyIndex = state.history.findIndex(h => h.date === todayStr);
+        if (historyIndex >= 0) {
+            state.history[historyIndex].price = state.stockPrice;
+        }
+
+        saveState();
+        renderDataView();
+        renderStartPage();
+    }
+}
+
+function renderWeeklySchedule() {
+    const grid = els.dashboard.weeklyGrid;
+    if (!grid) return;
+    grid.innerHTML = '';
+
+    const days = [];
+    const mon = new Date(weeklyStartDay);
+    for (let i = 0; i < 7; i++) {
+        const d = new Date(mon);
+        d.setDate(mon.getDate() + i);
+        days.push(d);
     }
 
-    const timeToPercent = (timeStr) => {
-        const [h, m] = timeStr.split(':').map(Number);
-        const totalMin = h * 60 + m;
-        return (totalMin / (24 * 60)) * 100;
+    // Title
+    const end = new Date(days[6]);
+    els.dashboard.weeklyTitle.textContent = `${days[MonDay(days[0])].getMonth() + 1}/${days[0].getDate()} - ${end.getMonth() + 1}/${end.getDate()} 行程`;
+
+    function MonDay(d) { return 0; } // Helper for index
+
+    // 1. Header Row
+    const timeRef = document.createElement('div');
+    timeRef.className = 'weekly-header-cell';
+    timeRef.textContent = '時間';
+    grid.appendChild(timeRef);
+
+    const todayStr = getLocalDateStr();
+    days.forEach(d => {
+        const dStr = getLocalDateStr(d);
+        const cell = document.createElement('div');
+        cell.className = 'weekly-header-cell' + (dStr === todayStr ? ' today' : '');
+        const dayNames = ['日', '一', '二', '三', '四', '五', '六'];
+        cell.innerHTML = `<div>${dayNames[d.getDay()]}</div><div style="font-size:0.6rem;">${d.getMonth() + 1}/${d.getDate()}</div>`;
+        grid.appendChild(cell);
+    });
+
+    // 2. Time Rows (0-23)
+    for (let h = 0; h < 24; h++) {
+        // Time Label
+        const timeLabel = document.createElement('div');
+        timeLabel.className = 'weekly-time-label';
+        timeLabel.textContent = `${String(h).padStart(2, '0')}:00`;
+        grid.appendChild(timeLabel);
+
+        // Day Cells
+        days.forEach(d => {
+            const dStr = getLocalDateStr(d);
+            const cell = document.createElement('div');
+            cell.className = 'weekly-hour-cell';
+            if (movingTask) {
+                cell.classList.add('move-target');
+                cell.onclick = () => completeMove(dStr, h);
+            }
+            grid.appendChild(cell);
+        });
+    }
+
+    // 3. Render Tasks
+    days.forEach((d, dayIdx) => {
+        const dStr = getLocalDateStr(d);
+        const tasks = getTasksForDate(dStr);
+
+        tasks.forEach(task => {
+            if (!task.time) return; // Only show timed tasks in grid
+
+            const [h, m] = task.time.split(':').map(Number);
+            let startH = h + m / 60;
+            let duration = 0.5; // Default 30 mins
+
+            if (task.endTime) {
+                const [eh, em] = task.endTime.split(':').map(Number);
+                duration = (eh + em / 60) - startH;
+                if (duration < 0.5) duration = 0.5;
+            }
+
+            const isDone = task.completedHistory && task.completedHistory[dStr];
+
+            const block = document.createElement('div');
+            block.className = 'weekly-task-block' + (isDone ? ' completed' : '');
+            if (movingTask && movingTask.task.id === task.id && movingTask.sourceDate === dStr) {
+                block.classList.add('moving');
+            }
+
+            // Position: 1 row = 50px. Header = 40px. 
+            // Col offset: starts from col 2 (index 1). Each day is 1fr.
+            // Row offset: each hour is 50px.
+            block.style.top = `${40 + startH * 50}px`;
+            block.style.height = `${duration * 50}px`;
+            block.style.left = `calc(50px + ${dayIdx} * (100% - 50px) / 7 + 4px)`;
+            block.style.width = `calc((100% - 50px) / 7 - 8px)`;
+
+            block.innerHTML = `
+                <div style="font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${task.name}</div>
+                <div style="font-size:0.6rem; opacity:0.8;">${task.time}${task.endTime ? '-' + task.endTime : ''}</div>
+            `;
+
+            block.onclick = (e) => {
+                e.stopPropagation();
+                if (movingTask) return;
+                enterMoveMode(task, dStr);
+            };
+
+            grid.appendChild(block);
+        });
+    });
+
+    renderUntimedSidebar(days);
+}
+
+function renderUntimedSidebar(weekDays) {
+    const todayStr = getLocalDateStr();
+    const todayList = els.dashboard.untimedTodayList;
+    const weeklyList = els.dashboard.untimedWeeklyList;
+    if (!todayList || !weeklyList) return;
+
+    todayList.innerHTML = '';
+    weeklyList.innerHTML = '';
+
+    const weekStrs = weekDays.map(d => getLocalDateStr(d));
+
+    // 1. Regular Untimed Tasks
+    state.tasks.forEach(task => {
+        if (task.time) return; // Only untimed
+
+        // Check each day of the week if this task applies
+        weekStrs.forEach(dStr => {
+            const applies = getTasksForDate(dStr).some(t => t.id === task.id);
+            if (applies) {
+                const isToday = dStr === todayStr;
+                const isDone = task.completedHistory && task.completedHistory[dStr];
+                const item = createUntimedItemEl(task, dStr, isDone);
+                if (isToday) todayList.appendChild(item);
+                else weeklyList.appendChild(item);
+            }
+        });
+    });
+
+    // 2. Gantt Child Tasks (Untimed)
+    if (state.ganttSystem && state.ganttSystem.projects) {
+        state.ganttSystem.projects.forEach(proj => {
+            proj.parents.forEach(parent => {
+                parent.children.forEach(child => {
+                    // Gantt child tasks usually have startDate/endDate but no specific time
+                    // Check if child overlaps with this week
+                    weekStrs.forEach(dStr => {
+                        const inRange = dStr >= child.startDate && dStr <= child.endDate;
+                        if (inRange) {
+                            const isToday = dStr === todayStr;
+                            // Check if already in regular tasks (to avoid duplicates if we link them)
+                            // For Me Inc, Gantt items are distinct from regular tasks unless explicitly linked.
+                            // The user asked to show Gantt child items too.
+                            const isDone = child.completed; // Simplification: Gantt child tasks have a 'completed' flag
+
+                            // Create a pseudo-task object for the sidebar
+                            const pseudoTask = {
+                                id: child.id,
+                                name: `[${proj.name}] ${child.name}`,
+                                score: child.score,
+                                isGantt: true,
+                                projectId: proj.id,
+                                parentId: parent.id,
+                                importance: child.importance || 'medium'
+                            };
+
+                            const item = createUntimedItemEl(pseudoTask, dStr, isDone);
+                            if (isToday) todayList.appendChild(item);
+                            else weeklyList.appendChild(item);
+                        }
+                    });
+                });
+            });
+        });
+    }
+}
+
+function createUntimedItemEl(task, dateStr, isDone) {
+    const el = document.createElement('div');
+    el.className = 'untimed-item' + (isDone ? ' completed' : '');
+    if (movingTask && movingTask.task.id === task.id && movingTask.sourceDate === dateStr) {
+        el.classList.add('moving');
+    }
+
+    el.innerHTML = `
+        <div style="font-weight:600;">${task.name}</div>
+        <div style="font-size:0.6rem; opacity:0.7;">
+            ${dateStr === getLocalDateStr() ? '今日' : dateStr.split('-').slice(1).join('/')} • ${task.score}分
+        </div>
+    `;
+
+    el.onclick = (e) => {
+        e.stopPropagation();
+        if (movingTask) return;
+        enterMoveMode(task, dateStr);
     };
 
-    rangedTasks.forEach(task => {
-        const startP = timeToPercent(task.time);
-        const endP = timeToPercent(task.endTime);
-        const widthP = endP - startP;
+    return el;
+}
 
-        const el = document.createElement('div');
-        el.className = 'focused-task-row';
+function enterMoveMode(task, sourceDate) {
+    movingTask = { task, sourceDate };
+    els.dashboard.moveHint.classList.remove('hidden');
+    renderWeeklySchedule();
+}
 
-        const isCompleted = task.completedHistory && task.completedHistory[todayStr];
+function cancelMove() {
+    movingTask = null;
+    els.dashboard.moveHint.classList.add('hidden');
+    renderWeeklySchedule();
+}
 
-        el.innerHTML = `
-            <div class="focused-task-left">
-                <input type="checkbox" class="task-checkbox" ${isCompleted ? 'checked' : ''}>
-                <div class="task-info">
-                    <span class="task-name" style="${isCompleted ? 'text-decoration: line-through; opacity: 0.5;' : ''}">${task.name}</span>
-                    <span class="task-meta">${task.time} - ${task.endTime}</span>
-                </div>
-            </div>
-            <div class="focused-task-right">
-                <div class="time-grid-line" style="left:0%"></div>
-                <div class="time-grid-line" style="left:25%"></div> <!-- 06:00 -->
-                <div class="time-grid-line" style="left:50%"></div> <!-- 12:00 -->
-                <div class="time-grid-line" style="left:75%"></div> <!-- 18:00 -->
-                <div class="time-bar" style="left:${startP}%; width:${widthP}%; background-color: ${isCompleted ? 'var(--accent-green)' : 'var(--accent-blue)'};"></div>
-            </div>
-        `;
+function completeMove(targetDate, targetHour) {
+    if (!movingTask) return;
+    const task = movingTask.task;
+    const sourceDate = movingTask.sourceDate;
 
-        const checkbox = el.querySelector('.task-checkbox');
-        checkbox.onchange = () => {
-            // Reuse toggleTask logic but refresh current view
-            toggleTask(task.id, todayStr, checkbox.checked);
-            renderFocusedGantt(); // Re-render to update bar color etc
+    // Determine new time
+    const newTime = `${String(targetHour).padStart(2, '0')}:00`;
+
+    // Duration preservation
+    let newEndTime = null;
+    if (task.endTime && task.time) {
+        const [sh, sm] = task.time.split(':').map(Number);
+        const [eh, em] = task.endTime.split(':').map(Number);
+        const durationH = (eh + em / 60) - (sh + sm / 60);
+
+        let endTotal = targetHour + durationH;
+        if (endTotal > 23.99) endTotal = 23.99;
+        const endH = Math.floor(endTotal);
+        const endM = Math.round((endTotal - endH) * 60);
+        newEndTime = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+    }
+
+    if (task.isGantt) {
+        // Convert Gantt child task to a regular scheduled task when moved to schedule
+        const newTask = {
+            id: Date.now(),
+            name: task.name.split('] ')[1] || task.name,
+            type: 'scheduled',
+            date: targetDate,
+            time: newTime,
+            importance: task.importance,
+            score: task.score,
+            createdAt: new Date().toISOString()
         };
+        if (newEndTime) newTask.endTime = newEndTime;
+        state.tasks.push(newTask);
 
-        container.appendChild(el);
-    });
+        // Mark Gantt child as handled or completed? 
+        // For now, just adding it to the schedule as a copy.
+    } else if (task.type === 'scheduled') {
+        task.date = targetDate;
+        task.time = newTime;
+        if (newEndTime) task.endTime = newEndTime;
+    } else if (task.type === 'recurring') {
+        if (confirm('這是一個重複項目。要修改此項目的整體時間與開始日期，還是僅此一次？(取消則不移動)')) {
+            task.recurrence.startDate = targetDate;
+            task.time = newTime;
+            if (newEndTime) task.endTime = newEndTime;
+        } else {
+            cancelMove();
+            return;
+        }
+    }
+
+    movingTask = null;
+    els.dashboard.moveHint.classList.add('hidden');
+    saveState();
+    renderWeeklySchedule();
+    renderStartPage();
 }
 
 
@@ -1260,30 +1660,56 @@ function toggleTask(taskId, dateStr, isChecked) {
 function renderCharts(todaysTasks = []) {
     if (typeof Chart === 'undefined') return;
 
-    // Prepare Data
+    // Helper: Reset Canvas Element (Fixes layout shift/growth issues)
+    const resetCanvas = (id) => {
+        const oldEl = document.getElementById(id);
+        if (!oldEl) return null;
+        const parent = oldEl.parentElement;
+        const newEl = document.createElement('canvas');
+        newEl.id = id;
+        oldEl.remove();
+        parent.appendChild(newEl);
+        return newEl;
+    };
+
+    // 1. Destroy old instances
+    if (chartInstance) {
+        chartInstance.destroy();
+        chartInstance = null;
+    }
+    if (kLineChartInstance) {
+        kLineChartInstance.destroy();
+        kLineChartInstance = null;
+    }
+    let ganttChartInstance = window.ganttChartInstance;
+    if (ganttChartInstance) {
+        ganttChartInstance.destroy();
+        window.ganttChartInstance = null;
+    }
+
+    // 2. Prepare Data
     let data = state.history.slice();
     const todayStr = getLocalDateStr();
 
-    // Always ensure today is in dataset for visualization
     if (!data.find(h => h.date === todayStr)) {
         data.push({ date: todayStr, price: state.stockPrice });
     }
-    // Update today's price in data view if strictly needed
     const todayEntry = data.find(h => h.date === todayStr);
     if (todayEntry) todayEntry.price = state.stockPrice;
 
-    const ctxLine = document.getElementById('mainChart');
-    const ctxK = document.getElementById('kLineChart');
-    const ctxGantt = document.getElementById('ganttChart'); // Gantt Canvas
+    // 3. Reset and Get Contexts
+    const ctxLine = resetCanvas('mainChart');
+    const ctxK = resetCanvas('kLineChart');
+    const ctxGantt = resetCanvas('ganttChart');
 
     if (!ctxLine || !ctxK || !ctxGantt) return;
 
-    // Destroy old
-    if (chartInstance) chartInstance.destroy();
-    if (kLineChartInstance) kLineChartInstance.destroy();
+    // --- RE-ATTACH CLICK LISTENER ---
+    ctxGantt.onclick = () => renderView('focusedGantt');
 
     // Line Chart
     chartInstance = new Chart(ctxLine.getContext('2d'), {
+        // ... (existing code, implied unchanged)
         type: 'line',
         data: {
             labels: data.map(d => d.date),
@@ -1381,8 +1807,7 @@ function renderCharts(todaysTasks = []) {
     });
 
     // --- Time Table Logic (formerly Gantt) ---
-    let ganttChartInstance = window.ganttChartInstance;
-    if (ganttChartInstance) ganttChartInstance.destroy();
+    // Instance destroyed at top
 
     const rangedTasks = todaysTasks.filter(t => t.time && t.endTime);
     rangedTasks.sort((a, b) => a.time.localeCompare(b.time));
@@ -1617,13 +2042,41 @@ function renderCalendar(date) {
 
         cell.innerHTML = `<span class="day-number">${i}</span>`;
 
-        // Indicators
+        // Tasks Preview
         const tasks = getTasksForDate(dateStr);
         if (tasks.length > 0) {
             const hasImportant = tasks.some(t => ['critical', 'high'].includes(t.importance));
-            const dot = document.createElement('div');
-            dot.className = `day-indicator ${hasImportant ? 'has-important' : ''}`;
-            cell.appendChild(dot);
+            // Indicator Dot (Keep it, or replace? Keeping it for quick status)
+            if (hasImportant) {
+                const dot = document.createElement('div');
+                dot.className = 'day-indicator has-important';
+                cell.appendChild(dot);
+            } else {
+                const dot = document.createElement('div');
+                dot.className = 'day-indicator';
+                cell.appendChild(dot);
+            }
+
+            // Preview List
+            const previewLimit = 3;
+            tasks.slice(0, previewLimit).forEach(t => {
+                const p = document.createElement('div');
+                p.className = 'calendar-task-preview';
+                p.textContent = t.name;
+                if (t.completedHistory && t.completedHistory[dateStr]) {
+                    p.style.textDecoration = 'line-through';
+                    p.style.opacity = '0.5';
+                }
+                cell.appendChild(p);
+            });
+
+            if (tasks.length > previewLimit) {
+                const more = document.createElement('div');
+                more.className = 'calendar-task-preview';
+                more.style.fontStyle = 'italic';
+                more.textContent = `+${tasks.length - previewLimit} more`;
+                cell.appendChild(more);
+            }
         }
 
         cell.onclick = () => showDetailModal(dateStr, tasks);
@@ -2369,13 +2822,6 @@ function mapImportance(imp) {
     const map = { critical: '重要', high: '還好', medium: '輕微', low: '不重要', daily: '日常' };
     return map[imp] || imp;
 }
-
-// --- Update Original init ---
-const originalInit = init;
-init = function () {
-    originalInit();
-    setupGanttListeners();
-};
 
 // Start
 init();
