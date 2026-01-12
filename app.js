@@ -1366,15 +1366,49 @@ function createUntimedItemEl(task, dateStr, isDone) {
         el.classList.add('moving');
     }
 
-    el.innerHTML = `
+    // Content Container (clickable for move)
+    const content = document.createElement('div');
+    content.style.flex = '1';
+    content.innerHTML = `
         <div style="font-weight:600;">${task.name}</div>
         <div style="font-size:0.6rem; opacity:0.7;">
             ${dateStr === getLocalDateStr() ? '今日' : dateStr.split('-').slice(1).join('/')} • ${task.score}分
         </div>
     `;
 
-    el.onclick = (e) => {
+    // Edit/Delete Controls
+    const controls = document.createElement('div');
+    controls.className = 'untimed-controls';
+
+    const editBtn = document.createElement('button');
+    editBtn.className = 'btn-icon-small';
+    editBtn.innerHTML = '✏️';
+    editBtn.title = '編輯';
+    editBtn.onclick = (e) => {
         e.stopPropagation();
+        // If it's a Gantt task, we might need special handling, but openEditModal checks standard properties.
+        // We will adapt standard Edit Modal to handle Gantt tasks logic in submit.
+        openEditModal(task, dateStr);
+    };
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'btn-icon-small';
+    deleteBtn.innerHTML = '🗑️';
+    deleteBtn.title = '刪除';
+    deleteBtn.onclick = (e) => {
+        e.stopPropagation();
+        initiateDelete(task, dateStr);
+    };
+
+    controls.appendChild(editBtn);
+    controls.appendChild(deleteBtn);
+
+    el.appendChild(content);
+    el.appendChild(controls);
+
+    // Main Item Click -> Move Mode
+    el.onclick = (e) => {
+        // e.stopPropagation(); // Handled by buttons
         if (movingTask) return;
         enterMoveMode(task, dateStr);
     };
@@ -2135,7 +2169,30 @@ function initiateDelete(task, dateStr) {
     taskToDelete = task;
     dateToDelete = dateStr;
 
-    if (task.type === 'recurring') {
+    // Check if Gantt Task
+    let isGantt = false;
+    if (state.ganttSystem && state.ganttSystem.projects) {
+        // Quick check if it's in Gantt structure (or use a flag if we had one reliable)
+        // Pseudo-tasks passed from sidebar usually don't have .type='recurring' etc.
+        // We can check if it exists in tasks array
+        const inRegular = state.tasks.some(t => t.id === task.id);
+        if (!inRegular) isGantt = true;
+    }
+
+    if (isGantt) {
+        if (confirm('確定要刪除此甘特圖項目嗎？')) {
+            // Remove from Gantt System
+            state.ganttSystem.projects.forEach(proj => {
+                proj.parents.forEach(parent => {
+                    const idx = parent.children.findIndex(c => c.id === task.id);
+                    if (idx !== -1) {
+                        parent.children.splice(idx, 1);
+                    }
+                });
+            });
+            finishDelete();
+        }
+    } else if (task.type === 'recurring') {
         // Show Selection Modal
         els.deleteModal.el.classList.remove('hidden');
 
@@ -2182,6 +2239,8 @@ function finishDelete() {
     renderCalendar(currentMonth);
     // Refresh Start Page (if we deleted today's task)
     renderStartPage();
+    // Refresh Weekly/Gantt View
+    renderWeeklySchedule();
 
     taskToDelete = null;
     dateToDelete = null;
@@ -2200,6 +2259,7 @@ function openEditModal(task, dateStr) {
     els.editModal.name.value = task.name;
     els.editModal.time.value = task.time || '';
     if (els.editModal.endTime) els.editModal.endTime.value = task.endTime || '';
+    if (els.editModal.score) els.editModal.score.value = task.score; // New Score Field
     if (els.editModal.isMission) els.editModal.isMission.checked = task.isMission || false;
 
     els.editModal.el.classList.remove('hidden');
@@ -2214,37 +2274,95 @@ function setupEditListeners() {
     if (els.editModal.form) {
         els.editModal.form.onsubmit = (e) => {
             e.preventDefault();
-            const taskId = parseInt(els.editModal.taskId.value);
+            const taskId = els.editModal.taskId.value; // Store as string first (Gantt IDs might be string or number)
             const originalDate = els.editModal.originalDate.value;
-            const newDate = els.editModal.taskDate.value; // User might have changed this
+            const newDate = els.editModal.taskDate.value;
             const newName = els.editModal.name.value;
             const newTime = els.editModal.time.value;
             const newEndTime = els.editModal.endTime ? els.editModal.endTime.value : null;
+            const newScore = parseFloat(els.editModal.score.value);
             const newIsMission = els.editModal.isMission ? els.editModal.isMission.checked : false;
 
             if (newEndTime && newTime && newEndTime <= newTime) return alert('結束時間必須晚於開始時間');
-
             if (!newName) return alert('請輸入名稱');
             if (!newDate) return alert('請輸入日期');
+            if (isNaN(newScore)) return alert('請輸入分數');
 
-            const task = state.tasks.find(t => t.id === taskId);
+            // Find Task (Check Regular then Gantt)
+            let task = state.tasks.find(t => t.id == taskId);
+            let isGantt = false;
+
+            if (!task) {
+                // Try finding in Gantt
+                if (state.ganttSystem && state.ganttSystem.projects) {
+                    for (const proj of state.ganttSystem.projects) {
+                        for (const parent of proj.parents) {
+                            const child = parent.children.find(c => c.id == taskId);
+                            if (child) {
+                                task = child;
+                                isGantt = true;
+                                break;
+                            }
+                        }
+                        if (task) break;
+                    }
+                }
+            }
+
             if (!task) return;
 
-            editPendingData = { name: newName, time: newTime, endTime: newEndTime, newDate: newDate, isMission: newIsMission };
-            taskToEdit = task;
-            editOriginalDateVal = originalDate;
-
-            if (task.type === 'recurring') {
-                // Ask Scope
-                els.editScopeModal.el.classList.remove('hidden');
-            } else {
-                // Direct Save (Scheduled)
+            // Handle Save
+            if (isGantt) {
+                // If it's a Gantt task, update properties directly
                 task.name = newName;
-                task.time = newTime;
-                task.endTime = newEndTime;
-                task.date = newDate; // Update Date
-                task.isMission = newIsMission;
+                task.score = newScore;
+
+                // If Date/Time is provided, we treat it as "Scheduling" this Gantt task
+                // Which effectively creates a linked scheduled task (as per completeMove logic)
+                // But users might expect the Gantt task itself to change. 
+                // Creating a scheduled copy is safer for now to preserve Gantt structure.
+                if (newTime) {
+                    const newTask = {
+                        id: Date.now(),
+                        name: newName, // Use edit name (might remove [Project] prefix if user wants)
+                        type: 'scheduled',
+                        date: newDate,
+                        time: newTime,
+                        score: newScore,
+                        isMission: newIsMission,
+                        createdAt: new Date().toISOString()
+                    };
+                    if (newEndTime) newTask.endTime = newEndTime;
+                    state.tasks.push(newTask);
+
+                    // Mark Gantt child as completed? Or just leave it?
+                    // User request: "Edit (Name, Score, Date, Time Range)"
+                    // If they set a date/time, it should appear on schedule.
+                }
+                // If no time set, we just updated the Gantt child's properties above.
+
                 finishEdit();
+                // Special refresh for Gantt
+                renderWeeklySchedule();
+            } else {
+                // Regular Task
+                editPendingData = { name: newName, time: newTime, endTime: newEndTime, newDate: newDate, score: newScore, isMission: newIsMission };
+                taskToEdit = task;
+                editOriginalDateVal = originalDate;
+
+                if (task.type === 'recurring') {
+                    // Ask Scope
+                    els.editScopeModal.el.classList.remove('hidden');
+                } else {
+                    // Direct Save (Scheduled)
+                    task.name = newName;
+                    task.time = newTime;
+                    task.endTime = newEndTime;
+                    task.date = newDate;
+                    task.score = newScore;
+                    task.isMission = newIsMission;
+                    finishEdit();
+                }
             }
         };
     }
