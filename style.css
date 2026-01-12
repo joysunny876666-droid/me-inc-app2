@@ -773,6 +773,45 @@ select:focus {
     padding: 4px;
 }
 
+.btn-icon-small:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+}
+
+/* Grid Task Controls */
+.weekly-task-block {
+    position: absolute;
+    /* Already verified in previous viewing */
+    /* Ensure relative context for controls if not absolute? */
+    /* block has absolute positioning for the grid. Inner layout logic provided below */
+}
+
+.grid-task-controls {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    display: flex;
+    gap: 2px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 4px;
+    padding: 2px;
+    z-index: 10;
+}
+
+.btn-icon-grid {
+    background: none;
+    border: none;
+    color: #fff;
+    cursor: pointer;
+    font-size: 0.7rem;
+    padding: 2px;
+    line-height: 1;
+}
+
+.btn-icon-grid:hover {
+    color: var(--accent-primary);
+}
+
 .btn-secondary.small {
     padding: 8px 12px;
     font-size: 0.85rem;

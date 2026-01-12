@@ -1276,13 +1276,47 @@ function renderWeeklySchedule() {
             block.style.left = `calc(50px + ${dayIdx} * (100% - 50px) / 7 + 4px)`;
             block.style.width = `calc((100% - 50px) / 7 - 8px)`;
 
-            block.innerHTML = `
+            // Content Layout: Flex row for Name + Controls
+            block.style.display = 'flex';
+            block.style.flexDirection = 'column';
+
+            // Name & Time (Clickable for move)
+            const content = document.createElement('div');
+            content.style.flex = '1';
+            content.style.overflow = 'hidden';
+            content.innerHTML = `
                 <div style="font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${task.name}</div>
                 <div style="font-size:0.6rem; opacity:0.8;">${task.time}${task.endTime ? '-' + task.endTime : ''}</div>
             `;
 
+            // Controls (Top-right absolute or flex bottom? Absolute is safer for small blocks)
+            const controls = document.createElement('div');
+            controls.className = 'grid-task-controls'; // Style this in CSS
+
+            const editBtn = document.createElement('button');
+            editBtn.className = 'btn-icon-grid';
+            editBtn.innerHTML = '✏️';
+            editBtn.onclick = (e) => {
+                e.stopPropagation(); // Prevent move mode
+                openEditModal(task, dStr);
+            };
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'btn-icon-grid';
+            deleteBtn.innerHTML = '🗑️';
+            deleteBtn.onclick = (e) => {
+                e.stopPropagation(); // Prevent move mode
+                initiateDelete(task, dStr);
+            };
+
+            controls.appendChild(editBtn);
+            controls.appendChild(deleteBtn);
+
+            block.appendChild(content);
+            block.appendChild(controls);
+
             block.onclick = (e) => {
-                e.stopPropagation();
+                // e.stopPropagation(); // Handled by buttons
                 if (movingTask) return;
                 enterMoveMode(task, dStr);
             };
