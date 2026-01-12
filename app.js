@@ -174,6 +174,7 @@ const els = {
         name: document.getElementById('editName'),
         time: document.getElementById('editTime'),
         endTime: document.getElementById('editEndTime'),
+        score: document.getElementById('editScore'),
         taskId: document.getElementById('editTaskId'),
         taskDate: document.getElementById('editTaskDate'),
         originalDate: document.getElementById('editOriginalDate'),
