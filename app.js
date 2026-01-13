@@ -512,7 +512,7 @@ function checkDailyPenaltiesOnLoad() {
     const end = new Date(todayStr);
 
     while (curr < end) {
-        const dStr = curr.toISOString().split('T')[0];
+        const dStr = getLocalDateStr(curr);
         const tasks = getTasksForDate(dStr);
         tasks.forEach(task => {
             // Apply penalty if ANY Task is not completed and has score
