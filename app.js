@@ -4,6 +4,7 @@ const defaultState = {
     history: [],
     tasks: [],
     lastLoginDate: '',
+    updatedAt: 0, // NEW: For sync conflict resolution
     accounting: {
         transactions: [],
         banks: [
@@ -164,6 +165,8 @@ const els = {
             endTime: document.getElementById('taskEndTime'),
 
             importance: document.getElementById('importance'),
+            isMission: document.getElementById('isMission'),
+            isPersistent: document.getElementById('isPersistent'),
             score: document.getElementById('score'),
             cancelBtn: document.getElementById('cancelAddBtn')
         }
@@ -179,6 +182,7 @@ const els = {
         taskDate: document.getElementById('editTaskDate'),
         originalDate: document.getElementById('editOriginalDate'),
         isMission: document.getElementById('editIsMission'),
+        isPersistent: document.getElementById('editIsPersistent'),
         closeBtn: document.getElementById('closeEditBtn'),
         cancelBtn: document.getElementById('cancelEditBtn')
     },
@@ -293,11 +297,22 @@ function setupCloudSync() {
         if (doc.exists) {
             console.log("Cloud data received");
             const cloudData = doc.data();
+
+            // --- NEW: Sync Conflict Resolution ---
+            // If local data is newer, don't overwrite with older cloud data
+            if (cloudData.updatedAt && state.updatedAt && cloudData.updatedAt < state.updatedAt) {
+                console.log("Cloud data is older than local, ignoring cloud update");
+                isCloudSyncStarted = true;
+                return;
+            }
+
             // Merge with default to ensure structure
             state = { ...defaultState, ...cloudData };
+            isCloudSyncStarted = true;
         } else {
             console.log("No cloud data, creating initial...");
-            // New user or cleared DB, save default
+            // New user or cleared DB, permit sync and save default
+            isCloudSyncStarted = true;
             saveState();
         }
 
@@ -316,9 +331,17 @@ function setupCloudSync() {
 }
 
 function saveState() {
+    if (!isCloudSyncStarted) {
+        console.warn("Save blocked: Cloud sync not yet started or initialized.");
+        return;
+    }
+
+    // Update timestamp
+    state.updatedAt = Date.now();
+
     // Save to Firestore
     db.collection('data').doc('state').set(state)
-        .then(() => console.log("State saved to Cloud"))
+        .then(() => console.log("State saved to Cloud " + new Date(state.updatedAt).toLocaleTimeString()))
         .catch((e) => {
             console.error("Save failed", e);
             alert("儲存失敗！請檢查 Firebase 權限設定 (Rules) 是否已開啟測試模式。\n錯誤訊息: " + e.message);
@@ -516,7 +539,7 @@ function checkDailyPenaltiesOnLoad() {
         const tasks = getTasksForDate(dStr);
         tasks.forEach(task => {
             // Apply penalty if ANY Task is not completed and has score
-            if (task.score > 0) {
+            if (task.score > 0 && !task.isPersistent) { // NEW: Skip persistent tasks
                 if (!task.penaltyHistory) task.penaltyHistory = {};
                 const isCompleted = task.completedHistory && task.completedHistory[dStr];
 
@@ -551,7 +574,7 @@ function checkImmediatePenalties() {
 
     state.tasks.forEach(task => {
         // Critical Overdue Logic
-        if (task.importance === 'critical' && task.time && task.score > 0) {
+        if (task.importance === 'critical' && task.time && task.score > 0 && !task.isPersistent) {
             let targetDate = null;
             if (task.type === 'recurring') {
                 const tasksToday = getTasksForDate(todayStr);
@@ -1603,9 +1626,12 @@ function getTasksForDate(dateStr) {
 
         if (task.isMission) {
             // Mission tasks appear until they are completed
-            // If they are NOT completed yet, or were completed ON this date, they appear.
-            // If they were completed BEFORE this date, they stop appearing.
             if (firstCompletionDate && firstCompletionDate < dateStr) return false;
+            return true;
+        }
+
+        if (task.isPersistent) {
+            // Persistent tasks always appear from start date onwards
             return true;
         }
 
@@ -1681,7 +1707,7 @@ function createTaskEl(task, dateStr, showDateLabel) {
     el.innerHTML = `
         <input type="checkbox" class="task-checkbox" ${isCompleted ? 'checked' : ''}>
         <div class="task-info">
-            <span class="task-name" style="${isCompleted ? 'text-decoration: line-through; opacity: 0.5;' : ''}">
+            <span class="task-name" style="${isCompleted && !task.isPersistent ? 'text-decoration: line-through; opacity: 0.5;' : ''}">
                 ${dateDisplay}${timeDisplay} ${task.name}
             </span>
             <div class="task-meta">
@@ -1705,12 +1731,33 @@ function toggleTask(taskId, dateStr, isChecked) {
 
     if (!task.completedHistory) task.completedHistory = {};
     const wasChecked = task.completedHistory[dateStr];
-    task.completedHistory[dateStr] = isChecked;
 
-    if (isChecked && !wasChecked) {
-        state.stockPrice += task.score;
-    } else if (!isChecked && wasChecked) {
-        state.stockPrice -= task.score;
+    if (task.isPersistent) {
+        // Persistent tasks award points every time they are "checked"
+        // We don't record a permanent "completed" state for them in the list
+        if (isChecked) {
+            state.stockPrice += task.score;
+            // Briefly alert or log
+            console.log(`Persistent task [${task.name}] checked: +${task.score}`);
+        } else {
+            // Unchecking doesn't subtract for persistent? 
+            // User said "每次勾選都會加此分數". If they uncheck, maybe it should subtract if was accidental.
+            // But usually persistent tasks are like "Logged a meal".
+            // Let's make it symmetric for now to allow correction.
+            state.stockPrice -= task.score;
+        }
+        // Force re-render to reset checkbox if we want "button" behavior, 
+        // but user might want to see it checked for today.
+        // If they want "multiple times", it should probably reset.
+        // Let's keep it checked for the day, but it stays in list tomorrow.
+        task.completedHistory[dateStr] = isChecked;
+    } else {
+        task.completedHistory[dateStr] = isChecked;
+        if (isChecked && !wasChecked) {
+            state.stockPrice += task.score;
+        } else if (!isChecked && wasChecked) {
+            state.stockPrice -= task.score;
+        }
     }
 
     const todayStr = getLocalDateStr();
@@ -2025,6 +2072,7 @@ function handleAddSubmit(e) {
     const importance = els.addForm.inputs.importance.value;
     const score = parseFloat(els.addForm.inputs.score.value);
     const isMission = els.addForm.inputs.isMission && els.addForm.inputs.isMission.checked;
+    const isPersistent = els.addForm.inputs.isPersistent && els.addForm.inputs.isPersistent.checked;
 
     // Validation
     if (!name) return alert('請輸入名稱');
@@ -2039,6 +2087,7 @@ function handleAddSubmit(e) {
         name,
         type: isRecurring ? 'recurring' : 'scheduled',
         isMission: isMission || false,
+        isPersistent: isPersistent || false,
         recurrence: isRecurring ? {
             type: recurrenceType,
             interval: recurrenceInterval,
@@ -2317,6 +2366,7 @@ function setupEditListeners() {
             const newEndTime = els.editModal.endTime ? els.editModal.endTime.value : null;
             const newScore = parseFloat(els.editModal.score.value);
             const newIsMission = els.editModal.isMission ? els.editModal.isMission.checked : false;
+            const newIsPersistent = els.editModal.isPersistent ? els.editModal.isPersistent.checked : false;
 
             if (newEndTime && newTime && newEndTime <= newTime) return alert('結束時間必須晚於開始時間');
             if (!newName) return alert('請輸入名稱');
@@ -2365,6 +2415,7 @@ function setupEditListeners() {
                         time: newTime,
                         score: newScore,
                         isMission: newIsMission,
+                        isPersistent: newIsPersistent,
                         createdAt: new Date().toISOString()
                     };
                     if (newEndTime) newTask.endTime = newEndTime;
@@ -2381,7 +2432,7 @@ function setupEditListeners() {
                 renderWeeklySchedule();
             } else {
                 // Regular Task
-                editPendingData = { name: newName, time: newTime, endTime: newEndTime, newDate: newDate, score: newScore, isMission: newIsMission };
+                editPendingData = { name: newName, time: newTime, endTime: newEndTime, newDate: newDate, score: newScore, isMission: newIsMission, isPersistent: newIsPersistent };
                 taskToEdit = task;
                 editOriginalDateVal = originalDate;
 
@@ -2396,6 +2447,7 @@ function setupEditListeners() {
                     task.date = newDate;
                     task.score = newScore;
                     task.isMission = newIsMission;
+                    task.isPersistent = newIsPersistent;
                     finishEdit();
                 }
             }
@@ -2439,6 +2491,7 @@ function updateRecurringSingle() {
         time: editPendingData.time,
         endTime: editPendingData.endTime,
         isMission: editPendingData.isMission,
+        isPersistent: editPendingData.isPersistent,
         exceptions: [], // Important: Reset exceptions for the new instance
         // Reset histories for the new task as it's a new instance
         completedHistory: {},
@@ -2477,6 +2530,7 @@ function updateRecurringFuture() {
         time: editPendingData.time,
         endTime: editPendingData.endTime,
         isMission: editPendingData.isMission,
+        isPersistent: editPendingData.isPersistent,
         createdAt: editPendingData.newDate,
         recurrence: {
             ...taskToEdit.recurrence,
@@ -2661,13 +2715,10 @@ function handleEditGanttTaskSubmit(e) {
     const type = document.getElementById('editGanttType').value;
 
     const proj = state.ganttSystem.projects.find(p => p.id === projId);
-    let item;
+    const item = findGanttItem(proj.parents, id);
+    if (!item) return;
 
-    if (type === 'parent') {
-        item = proj.parents.find(p => p.id === id);
-    } else {
-        const parent = proj.parents.find(p => p.id === parentId);
-        item = parent.children.find(c => c.id === id);
+    if (type === 'child') {
         item.importance = document.getElementById('editGanttImportance').value;
     }
 
@@ -2694,8 +2745,11 @@ function handleDeleteGanttTask() {
     if (type === 'parent') {
         proj.parents = proj.parents.filter(p => p.id !== id);
     } else {
-        const parent = proj.parents.find(p => p.id === parentId);
-        parent.children = parent.children.filter(c => c.id !== id);
+        // Find parent and remove child
+        const parent = findGanttItem(proj.parents, parentId || '');
+        if (parent && parent.children) {
+            parent.children = parent.children.filter(c => c.id !== id);
+        }
     }
 
     saveState();
@@ -2821,51 +2875,166 @@ function viewProjectDetail(projId) {
 
     proj.parents.forEach((parent, pIdx) => {
         const isLocked = pIdx > 0 && !proj.parents[pIdx - 1].completed;
-        const pDiv = document.createElement('div');
-        pDiv.className = `parent-task-item ${isLocked ? 'task-locked' : ''}`;
-
-        const childrenHtml = parent.children.map(c => `
-            <div class="child-task-item ${c.importance}">
-                <div style="display: flex; align-items: center; gap: 8px; flex: 1;">
-                    <input type="checkbox" class="task-checkbox" ${c.completed ? 'checked' : ''} ${isLocked || (c.completed && !parent.completed) ? '' : (isLocked || parent.completed ? 'disabled' : '')} onchange="toggleChildTask('${proj.id}', '${parent.id}', '${c.id}', this.checked)">
-                    <span style="${c.completed ? 'text-decoration: line-through; opacity: 0.5;' : ''}">${c.name}</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 12px;">
-                    <div style="font-size: 0.75rem; color: var(--text-secondary);">${c.score} 分</div>
-                    <button class="btn-icon-small" onclick="openEditGanttModal('${proj.id}', '${parent.id}', '${c.id}', 'child')">✏️</button>
-                </div>
-            </div>
-        `).join('');
-
-        pDiv.innerHTML = `
-            <div class="parent-header">
-                <div style="display: flex; align-items: center; gap: 8px; flex: 1;">
-                    <input type="checkbox" class="task-checkbox" ${parent.completed ? 'checked' : ''} ${isLocked || (parent.completed && !proj.completed) ? '' : (isLocked || parent.children.some(c => !c.completed) ? 'disabled' : '')} onchange="toggleParentTask('${proj.id}', '${parent.id}', this.checked)">
-                    <span style="font-weight: 700; ${parent.completed ? 'text-decoration: line-through; opacity: 0.5;' : ''}">${parent.name}</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 8px;">
-                     <span style="font-size: 0.75rem; color: var(--text-secondary);">${parent.score} 分</span>
-                     <button class="btn-icon-small" onclick="openEditGanttModal('${proj.id}', '', '${parent.id}', 'parent')">✏️</button>
-                     <button class="btn-add-small" onclick="openAddChildModal('${proj.id}', '${parent.id}')" ${parent.completed ? 'disabled' : ''}>+ 子任務</button>
-                </div>
-            </div>
-            <div style="font-size: 0.7rem; color: var(--text-secondary); margin-bottom: 8px;">範圍：${parent.startDate} ~ ${parent.endDate}</div>
-            <div class="children-list">
-                ${childrenHtml || '<div style="font-size: 0.75rem; color: gray; margin-left: 20px;">尚無子任務</div>'}
-            </div>
-        `;
-        container.appendChild(pDiv);
+        container.appendChild(renderGanttItemRecursive(proj, null, parent, 0, isLocked));
     });
+
+    // Add "Next Parent" button at the bottom
+    const addParentBtn = document.createElement('button');
+    addParentBtn.className = 'btn-primary full-width';
+    addParentBtn.style.marginTop = '20px';
+    addParentBtn.textContent = '+ 新增下一個父任務';
+    addParentBtn.onclick = () => {
+        // Open the project edit modal but specifically for adding a parent
+        openEditGanttProjectModal(projId);
+        // We might want to scroll to the parent list in that modal
+    };
+    container.appendChild(addParentBtn);
 }
 
-function openAddChildModal(projId, parentId) {
-    const parent = state.ganttSystem.projects.find(p => p.id === projId).parents.find(p => p.id === parentId);
+function renderGanttItemRecursive(proj, parentId, item, level, isLocked) {
+    const isParent = level === 0;
+    const div = document.createElement('div');
+    div.className = isParent ? `parent-task-item ${isLocked ? 'task-locked' : ''}` : `child-task-item ${item.importance || 'medium'}`;
+    div.style.marginLeft = level > 0 ? '15px' : '0';
+
+    const hasChildren = item.children && item.children.length > 0;
+
+    // Check if this specific item is disabled
+    // If it's a child with nested children, it can only be completed if its children are all done.
+    const childrenAllDone = areChildrenCompletedRecursive(item);
+    const canCheck = !isLocked && childrenAllDone;
+    const canUncheck = item.completed && (isParent ? !proj.completed : true); // Simplified: can always uncheck if completed
+
+    const itemHtml = `
+        <div class="${isParent ? 'parent-header' : 'item-header'}" style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px; flex: 1;">
+                <input type="checkbox" class="task-checkbox" 
+                    ${item.completed ? 'checked' : ''} 
+                    ${(item.completed || canCheck) ? '' : 'disabled'}
+                    onchange="toggleGanttItem('${proj.id}', '${parentId || ''}', '${item.id}', this.checked)">
+                <span style="font-weight: ${isParent ? '700' : 'normal'}; ${item.completed ? 'text-decoration: line-through; opacity: 0.5;' : ''}">${item.name}</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                 <span style="font-size: 0.75rem; color: var(--text-secondary);">${item.score} 分</span>
+                 <button class="btn-icon-small" onclick="openEditGanttModal('${proj.id}', '${parentId || ''}', '${item.id}', '${isParent ? 'parent' : 'child'}')">✏️</button>
+                 <button class="btn-add-small" onclick="openAddChildModal('${proj.id}', '${item.id}')" ${item.completed ? 'disabled' : ''}>+ 子任務</button>
+            </div>
+        </div>
+        ${isParent ? `<div style="font-size: 0.7rem; color: var(--text-secondary); margin-bottom: 8px;">範圍：${item.startDate} ~ ${item.endDate}</div>` : ''}
+    `;
+
+    div.innerHTML = itemHtml;
+
+    if (hasChildren) {
+        const childrenList = document.createElement('div');
+        childrenList.className = 'children-list';
+        item.children.forEach(child => {
+            childrenList.appendChild(renderGanttItemRecursive(proj, item.id, child, level + 1, isLocked));
+        });
+        div.appendChild(childrenList);
+    }
+
+    return div;
+}
+
+function findGanttItem(items, id) {
+    for (const it of items) {
+        if (it.id === id) return it;
+        if (it.children) {
+            const found = findGanttItem(it.children, id);
+            if (found) return found;
+        }
+    }
+    return null;
+}
+
+function areChildrenCompletedRecursive(item) {
+    if (!item.children || item.children.length === 0) return true;
+    return item.children.every(child => child.completed && areChildrenCompletedRecursive(child));
+}
+
+function toggleGanttItem(projId, parentId, id, isChecked) {
+    const proj = state.ganttSystem.projects.find(p => p.id === projId);
+    const item = findGanttItem(proj.parents, id);
+    if (!item) return;
+
+    // Is it a parent? (level 0)
+    const isParent = proj.parents.some(p => p.id === id);
+
+    if (item.completed && !isChecked) {
+        state.stockPrice -= item.score;
+        item.completed = false;
+        // If it was a parent and the project was completed, uncomplete it?
+        if (isParent) proj.completed = false;
+    } else if (!item.completed && isChecked) {
+        // Points plus importance bonus for children
+        let totalGain = item.score;
+        if (!isParent) {
+            if (item.importance === 'importance-dark-red') totalGain += 4;
+            else if (item.importance === 'importance-light-red') totalGain += 2;
+        }
+
+        state.stockPrice += totalGain;
+        item.completed = true;
+
+        if (isParent) {
+            checkProjectCompletion(proj);
+        }
+    }
+
+    saveState();
+    viewProjectDetail(projId);
+}
+
+function checkProjectCompletion(proj) {
+    if (proj.parents.every(p => p.completed)) {
+        const todayStr = getLocalDateStr();
+        const startStr = proj.startDate;
+        const endStr = proj.endDate;
+        const startD = new Date(startStr);
+        const endD = new Date(endStr);
+        const todayD = new Date(todayStr);
+
+        const totalDays = Math.floor((endD - startD) / (1000 * 60 * 60 * 24)) + 1;
+        let finalBonus = 0;
+        let bonusMsg = '';
+
+        if (totalDays > 0) {
+            const elapsedDays = Math.floor((todayD - startD) / (1000 * 60 * 60 * 24)) + 1;
+            if (elapsedDays <= totalDays / 3) {
+                finalBonus = Math.floor(proj.score * 0.5);
+                bonusMsg = ` (獲得額外 1/2 獎勵 +${finalBonus})`;
+            } else if (elapsedDays <= (2 * totalDays) / 3) {
+                finalBonus = Math.floor(proj.score / 3);
+                bonusMsg = ` (獲得額外 1/3 獎勵 +${finalBonus})`;
+            }
+        }
+
+        state.stockPrice += proj.score + finalBonus;
+        proj.completed = true;
+        alert(`恭喜完成企劃 [${proj.name}]！獲得 ${proj.score + finalBonus} 分${bonusMsg}`);
+    }
+}
+
+function openAddChildModal(projId, parentOrChildId) {
+    const proj = state.ganttSystem.projects.find(p => p.id === projId);
+
+    const item = findGanttItem(proj.parents, parentOrChildId);
+    if (!item) return;
+
     document.getElementById('childProjectId').value = projId;
-    document.getElementById('childParentId').value = parentId;
-    document.getElementById('childStartDate').min = parent.startDate;
-    document.getElementById('childStartDate').max = parent.endDate;
-    document.getElementById('childEndDate').min = parent.startDate;
-    document.getElementById('childEndDate').max = parent.endDate;
+    document.getElementById('childParentId').value = parentOrChildId; // This is the ID we'll append to
+
+    // Set date bounds based on target parent/child
+    document.getElementById('childStartDate').min = item.startDate;
+    document.getElementById('childStartDate').max = item.endDate;
+    document.getElementById('childEndDate').min = item.startDate;
+    document.getElementById('childEndDate').max = item.endDate;
+
+    // Default values
+    document.getElementById('childStartDate').value = item.startDate;
+    document.getElementById('childEndDate').value = item.endDate;
+
     els.gantt.childModal.el.classList.remove('hidden');
 }
 
@@ -2874,7 +3043,8 @@ function handleAddChildTaskSubmit(e) {
     const projId = document.getElementById('childProjectId').value;
     const parentId = document.getElementById('childParentId').value;
     const proj = state.ganttSystem.projects.find(p => p.id === projId);
-    const parent = proj.parents.find(p => p.id === parentId);
+    const item = findGanttItem(proj.parents, parentId);
+    if (!item) return;
 
     const child = {
         id: `c-${Date.now()}`,
@@ -2883,90 +3053,19 @@ function handleAddChildTaskSubmit(e) {
         startDate: document.getElementById('childStartDate').value,
         endDate: document.getElementById('childEndDate').value,
         importance: document.getElementById('childImportance').value,
+        children: [], // Allow nesting
         completed: false
     };
 
-    parent.children.push(child);
+    item.children.push(child);
     saveState();
     els.gantt.childModal.el.classList.add('hidden');
     viewProjectDetail(projId);
 }
 
-function toggleChildTask(projId, parentId, childId, isChecked) {
-    const proj = state.ganttSystem.projects.find(p => p.id === projId);
-    const parent = proj.parents.find(p => p.id === parentId);
-    const child = parent.children.find(c => c.id === childId);
-
-    if (child.completed && !isChecked) {
-        // Unchecking is allowed but subtract points
-        state.stockPrice -= child.score;
-        child.completed = false;
-    } else if (!child.completed && isChecked) {
-        // Calculating score
-        let totalGain = child.score;
-        if (child.importance === 'importance-dark-red') totalGain += 4;
-        else if (child.importance === 'importance-light-red') totalGain += 2;
-
-        state.stockPrice += totalGain;
-        child.completed = true;
-    }
-
-    saveState();
-    viewProjectDetail(projId);
-}
-
-function toggleParentTask(projId, parentId, isChecked) {
-    const proj = state.ganttSystem.projects.find(p => p.id === projId);
-    const parent = proj.parents.find(p => p.id === parentId);
-
-    if (parent.completed && !isChecked) {
-        state.stockPrice -= parent.score;
-        parent.completed = false;
-    } else if (!parent.completed && isChecked) {
-        let totalGain = parent.score;
-        state.stockPrice += totalGain;
-        parent.completed = true;
-
-        // Check project completion
-        if (proj.parents.every(p => p.completed)) {
-            const todayStr = getLocalDateStr();
-            const startStr = proj.startDate;
-            const endStr = proj.endDate;
-            const startD = new Date(startStr);
-            const endD = new Date(endStr);
-            const todayD = new Date(todayStr);
-
-            // total duration in days (inclusive)
-            const totalDays = Math.floor((endD - startD) / (1000 * 60 * 60 * 24)) + 1;
-            let finalBonus = 0;
-            let bonusMsg = '';
-
-            if (totalDays > 0) {
-                const elapsedDays = Math.floor((todayD - startD) / (1000 * 60 * 60 * 24)) + 1;
-
-                if (elapsedDays <= totalDays / 3) {
-                    finalBonus = Math.floor(proj.score * 0.5); // Part 1: +50%
-                    bonusMsg = ` (獲得額外 1/2 獎勵 +${finalBonus})`;
-                } else if (elapsedDays <= (2 * totalDays) / 3) {
-                    finalBonus = Math.floor(proj.score / 3); // Part 2: +33%
-                    bonusMsg = ` (獲得額外 1/3 獎勵 +${finalBonus})`;
-                }
-            }
-
-            state.stockPrice += proj.score + finalBonus;
-            proj.completed = true;
-            alert(`恭喜完成企劃 [${proj.name}]！獲得 ${proj.score + finalBonus} 分${bonusMsg}`);
-        }
-    }
-
-    saveState();
-    viewProjectDetail(projId);
-}
-
 // Global functions for onclick (since they are in HTML strings)
 window.viewProjectDetail = viewProjectDetail;
-window.toggleChildTask = toggleChildTask;
-window.toggleParentTask = toggleParentTask;
+window.toggleGanttItem = toggleGanttItem;
 window.openAddChildModal = openAddChildModal;
 window.openEditGanttModal = openEditGanttModal;
 window.openEditGanttProjectModal = openEditGanttProjectModal;
