@@ -31,8 +31,8 @@ let chartInstance = null;
 let kLineChartInstance = null;
 let weeklyStartDay = null; // Monday of the current viewing week
 let movingTask = null; // { task, sourceDate }
+let isCloudSyncStarted = false;
 
-// --- Firebase Initialization ---
 const firebaseConfig = {
     apiKey: "AIzaSyAa0xcoNbVHc_bzAI53WK2XbU41xJJP4q0",
     authDomain: "me-inc-db.firebaseapp.com",
@@ -43,13 +43,27 @@ const firebaseConfig = {
     measurementId: "G-707RMW9027"
 };
 
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
+// --- Firebase Initialization ---
+try {
+    if (typeof firebase !== 'undefined') {
+        firebase.initializeApp(firebaseConfig);
+        var db = firebase.firestore();
+    } else {
+        console.warn("Firebase not loaded from CDN.");
+    }
+} catch (e) {
+    console.error("Firebase Initialization Error:", e);
+}
 
 // --- Helper: Date Utilities ---
 const getLocalDateStr = (d = new Date()) => {
-    const offset = d.getTimezoneOffset() * 60000;
-    return new Date(d.getTime() - offset).toISOString().split('T')[0];
+    try {
+        const offset = d.getTimezoneOffset() * 60000;
+        return new Date(d.getTime() - offset).toISOString().split('T')[0];
+    } catch (e) {
+        console.error("Date Utility Error:", e);
+        return new Date().toISOString().split('T')[0];
+    }
 };
 
 const getDayName = (dateStr) => {
@@ -122,7 +136,7 @@ const els = {
         importantList: document.getElementById('importantTaskList'),
         searchInput: document.getElementById('searchDateInput'),
         searchBtn: document.getElementById('searchBtn'),
-        focusedList: document.getElementById('focusedGanttList'), // Obsolete
+        // focusedList: document.getElementById('focusedGanttList'), // Removed (Obsolete)
         weeklyGrid: document.getElementById('weeklyGrid'),
         weeklyTitle: document.getElementById('weeklyViewTitle'),
         moveHint: document.getElementById('moveTaskHint'),
@@ -264,93 +278,184 @@ const els = {
 
 // --- Initialization ---
 function init() {
-    setupEventListeners();
-    setupEditListeners();
-    setupAccountingListeners();
-    setupGanttListeners(); // Integrated directly
+    console.log("Initializing App...");
+    try {
+        // 1. Validate State immediately to prevent startup crashes from bad data
+        validateAndRepairState();
 
-    // Auto-refresh (every minute)
-    setInterval(() => {
-        if (currentView === 'start') renderStartPage();
-    }, 60000);
+        setupEventListeners();
+        setupEditListeners();
+        setupAccountingListeners();
+        setupGanttListeners(); // Integrated directly
 
-    // Check immediate penalties every minute
-    setInterval(checkImmediatePenalties, 60000);
+        // Auto-refresh (every minute)
+        setInterval(() => {
+            if (currentView === 'start') {
+                try {
+                    renderStartPage();
+                } catch (e) {
+                    console.error("Auto-refresh error:", e);
+                }
+            }
+        }, 60000);
 
-    // Initial check for weeklyStartDay to prevent navigation crashes
-    if (!weeklyStartDay) {
-        const now = new Date();
-        const day = now.getDay();
-        const diff = (day === 0 ? -6 : 1) - day;
-        const monday = new Date(now);
-        monday.setDate(now.getDate() + diff);
-        weeklyStartDay = monday;
+        // Check immediate penalties every minute
+        setInterval(() => {
+            try {
+                checkImmediatePenalties();
+            } catch (e) { console.error("Penalty check error:", e); }
+        }, 60000);
+
+        // Initial check for weeklyStartDay to prevent navigation crashes
+        if (!weeklyStartDay) {
+            const now = new Date();
+            const day = now.getDay();
+            const diff = (day === 0 ? -6 : 1) - day;
+            const monday = new Date(now);
+            monday.setDate(now.getDate() + diff);
+            weeklyStartDay = monday;
+        }
+
+        // Start Cloud Sync
+        setupCloudSync();
+    } catch (error) {
+        console.error("Initialization Error:", error);
+        alert("應用程式啟動失敗，請重新整理頁面。錯誤：" + error.message);
     }
+}
 
-    // Start Cloud Sync
-    setupCloudSync();
+function validateAndRepairState() {
+    try {
+        if (!state) state = defaultState;
+        if (!state.tasks) state.tasks = [];
+        if (!state.history) state.history = [];
+        if (!state.accounting) state.accounting = { transactions: [], banks: [], categories: [] };
+        if (!state.ganttSystem) state.ganttSystem = { projects: [] };
+
+        // Ensure Accounting Arrays
+        if (!state.accounting.transactions) state.accounting.transactions = [];
+        if (!state.accounting.banks) state.accounting.banks = [{ id: 1, name: '現金', balance: 0 }];
+        if (!state.accounting.categories) state.accounting.categories = [{ id: 1, name: '預設' }];
+
+        // Ensure Gantt Arrays
+        if (!state.ganttSystem.projects) state.ganttSystem.projects = [];
+
+        // Fix potential Gantt structure issues
+        state.ganttSystem.projects.forEach(p => {
+            if (!p.parents) p.parents = [];
+            p.parents.forEach(parent => {
+                if (!parent.children) parent.children = [];
+            });
+        });
+
+        console.log("State validated and repaired.");
+    } catch (e) {
+        console.error("State Validation Error:", e);
+        // Fallback to default if totally broken
+        state = defaultState;
+    }
 }
 
 function setupCloudSync() {
     // Listen to changes in 'state' document
-    db.collection('data').doc('state').onSnapshot((doc) => {
-        if (doc.exists) {
-            console.log("Cloud data received");
-            const cloudData = doc.data();
+    try {
+        if (!db) throw new Error("Firebase DB not initialized");
 
-            // --- NEW: Sync Conflict Resolution ---
-            // If local data is newer, don't overwrite with older cloud data
-            if (cloudData.updatedAt && state.updatedAt && cloudData.updatedAt < state.updatedAt) {
-                console.log("Cloud data is older than local, ignoring cloud update");
-                isCloudSyncStarted = true;
-                return;
+        db.collection('data').doc('state').onSnapshot((doc) => {
+            try {
+                if (doc.exists) {
+                    console.log("Cloud data received");
+                    const cloudData = doc.data();
+
+                    // --- NEW: Sync Conflict Resolution ---
+                    // If local data is newer, don't overwrite with older cloud data
+                    if (cloudData.updatedAt && state.updatedAt && cloudData.updatedAt < state.updatedAt) {
+                        console.log("Cloud data is older than local, ignoring cloud update");
+                        isCloudSyncStarted = true;
+                        return;
+                    }
+
+                    // Merge with default to ensure structure
+                    // Deep merge is better, but simple spread + validation works for now
+                    state = { ...defaultState, ...cloudData };
+
+                    // Validate integrity after merge
+                    validateAndRepairState();
+
+                    isCloudSyncStarted = true;
+                } else {
+                    console.log("No cloud data, creating initial...");
+                    // New user or cleared DB, permit sync and save default
+                    isCloudSyncStarted = true;
+                    saveState();
+                }
+
+                // After data updates, check logic and render
+                checkDailyPenaltiesOnLoad();
+                checkImmediatePenalties();
+
+                // --- NEW: Automatic Cleanup ---
+                runAutomaticCleanup();
+
+                renderView(currentView || 'start');
+            } catch (innerErr) {
+                console.error("Error processing cloud data:", innerErr);
+                alert("同步資料處理失敗，已切換至離線模式。");
             }
-
-            // Merge with default to ensure structure
-            state = { ...defaultState, ...cloudData };
-            isCloudSyncStarted = true;
-        } else {
-            console.log("No cloud data, creating initial...");
-            // New user or cleared DB, permit sync and save default
-            isCloudSyncStarted = true;
-            saveState();
-        }
-
-        // After data updates, check logic and render
-        checkDailyPenaltiesOnLoad();
-        checkImmediatePenalties();
-
-        // --- NEW: Automatic Cleanup ---
-        runAutomaticCleanup();
-
-        renderView(currentView || 'start');
-    }, (error) => {
-        console.error("Sync error:", error);
-        alert("連線資料庫失敗，請檢查網路或是 API 金鑰。目前使用離線模式。");
-    });
+        }, (error) => {
+            console.error("Sync error:", error);
+            // alert("連線資料庫失敗，請檢查網路或是 API 金鑰。目前使用離線模式。");
+            // Silently fail to offline mode to avoid annoying alerts
+        });
+    } catch (e) {
+        console.warn("Cloud Sync Setup Failed (Offline Mode):", e);
+    }
 }
 
-function saveState() {
+function saveState(reason = "Unknown") {
     if (!isCloudSyncStarted) {
-        console.warn("Save blocked: Cloud sync not yet started or initialized.");
+        console.warn(`Save blocked (${reason}): Cloud sync not yet started.`);
         return;
     }
 
     // Update timestamp
     state.updatedAt = Date.now();
 
+    console.log(`Saving state due to: ${reason}`);
+
     // Save to Firestore
     db.collection('data').doc('state').set(state)
-        .then(() => console.log("State saved to Cloud " + new Date(state.updatedAt).toLocaleTimeString()))
+        .then(() => console.log(`State saved to Cloud (${reason}) ` + new Date(state.updatedAt).toLocaleTimeString()))
         .catch((e) => {
             console.error("Save failed", e);
-            alert("儲存失敗！請檢查 Firebase 權限設定 (Rules) 是否已開啟測試模式。\n錯誤訊息: " + e.message);
+            alert("儲存失敗！請檢查 Firebase 權限設定。\n錯誤: " + e.message);
         });
 }
 
+
 function setupEventListeners() {
-    if (els.nav.addBtn) els.nav.addBtn.onclick = () => renderView('add');
-    if (els.nav.scheduleBtn) els.nav.scheduleBtn.onclick = () => renderView('schedule');
+    console.log("Setting up event listeners...");
+
+    // Debug: Check if elements exist
+    if (!els.nav.addBtn) console.error("MISSING: nav.addBtn");
+    if (!els.nav.scheduleBtn) console.error("MISSING: nav.scheduleBtn");
+    if (!els.nav.accountingBtn) console.error("MISSING: nav.accountingBtn");
+    if (!els.nav.ganttBtn) console.error("MISSING: nav.ganttBtn");
+
+    if (els.nav.addBtn) {
+        els.nav.addBtn.onclick = () => {
+            console.log("Clicked: Add Button");
+            renderView('add');
+        };
+    }
+    if (els.nav.scheduleBtn) {
+        els.nav.scheduleBtn.onclick = () => {
+            console.log("Clicked: Schedule Button");
+            renderView('schedule');
+        };
+    }
+    // ...
+
 
     if (els.dashboard.searchBtn) {
         els.dashboard.searchBtn.onclick = () => {
@@ -457,7 +562,9 @@ function setupEventListeners() {
 }
 
 // --- Automatic Cleanup Logic ---
+// --- Automatic Cleanup Logic ---
 function runAutomaticCleanup() {
+    let hasChanges = false;
     const today = new Date();
     const todayStr = getLocalDateStr(today);
 
@@ -466,6 +573,7 @@ function runAutomaticCleanup() {
     thirtyDaysAgo.setDate(today.getDate() - 30);
     const thirtyDaysAgoStr = getLocalDateStr(thirtyDaysAgo);
 
+    const initialTaskCount = state.tasks.length;
     state.tasks = state.tasks.filter(t => {
         // If mission and not complete, keep
         if (t.isMission) {
@@ -485,12 +593,16 @@ function runAutomaticCleanup() {
         return true;
     });
 
+    if (state.tasks.length !== initialTaskCount) hasChanges = true;
+
     // 2. Cleanup Gantt Projects (Completed > 30 days)
     if (state.ganttSystem && state.ganttSystem.projects) {
+        const initialProjCount = state.ganttSystem.projects.length;
         state.ganttSystem.projects = state.ganttSystem.projects.filter(p => {
             if (p.completed && p.endDate < thirtyDaysAgoStr) return false;
             return true;
         });
+        if (state.ganttSystem.projects.length !== initialProjCount) hasChanges = true;
     }
 
     // 3. Cleanup Accounting (Transaction > 60 days)
@@ -511,63 +623,91 @@ function runAutomaticCleanup() {
                 const monthKey = t.month || t.date.slice(0, 7); // Use date YYYY-MM
                 state.accounting.historicalExpenses[monthKey] = (state.accounting.historicalExpenses[monthKey] || 0) + Math.abs(t.amount);
             }
-            // Drop it
+            // Drop it (change detected)
+            hasChanges = true;
         } else {
             keepTransactions.push(t);
         }
     });
-    state.accounting.transactions = keepTransactions;
 
-    saveState();
+    // Only update if changes were flagged logic-wise above
+    if (keepTransactions.length !== state.accounting.transactions.length) {
+        state.accounting.transactions = keepTransactions;
+        hasChanges = true;
+    }
+
+    if (hasChanges) {
+        console.log("Automatic cleanup performed, saving state...");
+        saveState();
+    }
 }
 
 // --- Penalty Logic ---
+// --- Penalty Logic ---
 function checkDailyPenaltiesOnLoad() {
+    let hasChanges = false;
+
     if (!state.lastLoginDate) {
         state.lastLoginDate = getLocalDateStr();
-        saveState();
+        saveState(); // Must save if first run
         return;
     }
     const todayStr = getLocalDateStr();
     const lastLogin = state.lastLoginDate;
 
-    let curr = new Date(lastLogin);
-    const end = new Date(todayStr);
+    // Optimization: If already checked today, skip loop
+    if (lastLogin !== todayStr) {
+        let curr = new Date(lastLogin);
+        const end = new Date(todayStr);
 
-    while (curr < end) {
-        const dStr = getLocalDateStr(curr);
-        const tasks = getTasksForDate(dStr);
-        tasks.forEach(task => {
-            // Apply penalty if ANY Task is not completed and has score
-            if (task.score > 0 && !task.isPersistent) { // NEW: Skip persistent tasks
-                if (!task.penaltyHistory) task.penaltyHistory = {};
-                const isCompleted = task.completedHistory && task.completedHistory[dStr];
+        while (curr < end) {
+            const dStr = getLocalDateStr(curr);
+            const tasks = getTasksForDate(dStr);
+            tasks.forEach(task => {
+                // Apply penalty if ANY Task is not completed and has score
+                if (task.score > 0 && !task.isPersistent) { // Skip persistent tasks
+                    if (!task.penaltyHistory) task.penaltyHistory = {};
+                    const isCompleted = task.completedHistory && task.completedHistory[dStr];
 
-                if (!isCompleted && !task.penaltyHistory[dStr]) {
-                    state.stockPrice -= task.score;
-                    task.penaltyHistory[dStr] = true;
+                    if (!isCompleted && !task.penaltyHistory[dStr]) {
+                        state.stockPrice -= task.score;
+                        task.penaltyHistory[dStr] = true;
+                        hasChanges = true;
+                    }
                 }
-            }
-        });
-        curr.setDate(curr.getDate() + 1);
-    }
-    state.lastLoginDate = todayStr;
+            });
+            curr.setDate(curr.getDate() + 1);
+        }
 
-    // Gantt Project Penalties
+        state.lastLoginDate = todayStr;
+        hasChanges = true;
+    } else {
+        // Even if same day, we might want to check current tasks for IMMEDIATE penalties?
+        // No, this function is "OnLoad" (Catch up for past days).
+        // Immediate penalties are handled by 'checkImmediatePenalties' interval.
+    }
+
+    // Gantt Project Penalties (Check if any project became overdue since last check)
     if (state.ganttSystem && state.ganttSystem.projects) {
         state.ganttSystem.projects.forEach(proj => {
             if (!proj.completed && todayStr > proj.endDate && !proj.penaltyApplied) {
                 state.stockPrice -= proj.score;
                 proj.penaltyApplied = true;
                 console.log(`Penalty applied for project: ${proj.name}`);
+                hasChanges = true;
             }
         });
     }
 
-    saveState();
+    if (hasChanges) {
+        console.log("Penalties applied or new day detected, saving state...");
+        saveState();
+    }
 }
 
+// --- Immediate Penalty Check (Runs every minute) ---
 function checkImmediatePenalties() {
+    let hasChanges = false;
     const now = new Date();
     const todayStr = getLocalDateStr(now);
     const currentTimeStr = now.toTimeString().slice(0, 5);
@@ -600,13 +740,17 @@ function checkImmediatePenalties() {
                     if (!isCompleted && !isPenalized) {
                         state.stockPrice -= task.score;
                         task.penaltyHistory[targetDate] = true;
+                        hasChanges = true; // Mark change
                         renderStartPage();
                     }
                 }
             }
         }
     });
-    saveState();
+
+    if (hasChanges) {
+        saveState("ImmediatePenaltyApplied");
+    }
 }
 
 // --- View Rendering ---
@@ -749,7 +893,7 @@ function handleAccountingEntrySubmit(e) {
 
         // Update state
         state.accounting.transactions.push(transaction);
-        const bank = state.accounting.banks.find(b => b.id === bankId);
+        const bank = state.accounting.banks.find(b => b.id == bankId);
         if (bank) bank.balance += amount;
 
         saveState();
@@ -779,93 +923,109 @@ function renderAccountingView() {
 }
 
 function renderAccountingCharts() {
-    if (typeof Chart === 'undefined') return;
-
-    // Reset instances
-    if (accLineChartInstance) accLineChartInstance.destroy();
-    if (accPieChartInstance) accPieChartInstance.destroy();
-
-    // --- Line Chart: Balance Trend (Last 7 days) ---
-    const last7Days = [];
-    for (let i = 6; i >= 0; i--) {
-        const d = new Date();
-        d.setDate(d.getDate() - i);
-        last7Days.push(getLocalDateStr(d));
-    }
-
-    // This is tricky: we need cumulative balance.
-    // For simplicity, we'll show daily net change or just mockup the trend based on current balance and recent transactions.
-    let cumulative = state.accounting.banks.reduce((acc, b) => acc + b.balance, 0);
-    const trendData = [];
-    const reversedDays = [...last7Days].reverse();
-    reversedDays.forEach(day => {
-        trendData.unshift(cumulative);
-        const dayChange = state.accounting.transactions
-            .filter(t => t.date === day)
-            .reduce((acc, t) => acc + t.amount, 0);
-        cumulative -= dayChange; // step back
-    });
-
-    accLineChartInstance = new Chart(els.accounting.charts.lineCanvas.getContext('2d'), {
-        type: 'line',
-        data: {
-            labels: last7Days.map(d => d.slice(5)),
-            datasets: [{
-                label: '總額',
-                data: trendData,
-                borderColor: '#3b82f6',
-                tension: 0.3,
-                fill: false
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { legend: { display: false } }
+    try {
+        if (typeof Chart === 'undefined') {
+            console.warn("Chart.js not loaded.");
+            return;
         }
-    });
 
-    // --- Pie Chart: Expenses by Category (Current Month) ---
-    const now = new Date();
-    const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const monthlyTransactions = state.accounting.transactions.filter(t => t.amount < 0 && t.date.startsWith(monthStr));
+        const lineCanvas = els.accounting.charts.lineCanvas;
+        const pieCanvas = els.accounting.charts.pieCanvas;
 
-    const categoryTotals = {};
-    monthlyTransactions.forEach(t => {
-        categoryTotals[t.category] = (categoryTotals[t.category] || 0) + Math.abs(t.amount);
-    });
+        if (!lineCanvas || !pieCanvas) return;
 
-    const labels = Object.keys(categoryTotals);
-    const data = Object.values(categoryTotals);
-    const colors = ['#3b82f6', '#10b981', '#ef4444', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4'];
+        // Reset instances
+        if (accLineChartInstance) accLineChartInstance.destroy();
+        if (accPieChartInstance) accPieChartInstance.destroy();
 
-    accPieChartInstance = new Chart(els.accounting.charts.pieCanvas.getContext('2d'), {
-        type: 'pie',
-        data: {
-            labels: labels,
-            datasets: [{
-                data: data,
-                backgroundColor: colors,
-                borderWidth: 0
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { legend: { display: false } }
+        // --- Line Chart: Balance Trend (Last 7 days) ---
+        const last7Days = [];
+        for (let i = 6; i >= 0; i--) {
+            const d = new Date();
+            d.setDate(d.getDate() - i);
+            last7Days.push(getLocalDateStr(d));
         }
-    });
 
-    // Custom Legend
-    const legendEl = els.accounting.charts.pieLegend;
-    if (legendEl) {
-        legendEl.innerHTML = labels.map((label, i) => `
-            <div class="legend-item">
-                <div class="legend-color" style="background-color: ${colors[i % colors.length]}"></div>
-                <span class="legend-label">${label}</span>
-                <span class="legend-amount">${categoryTotals[label].toLocaleString()}</span>
-            </div>
-        `).join('');
+        let cumulative = state.accounting.banks.reduce((acc, b) => acc + b.balance, 0);
+        const trendData = [];
+        const reversedDays = [...last7Days].reverse();
+        reversedDays.forEach(day => {
+            trendData.unshift(cumulative);
+            const dayChange = state.accounting.transactions
+                .filter(t => t.date === day)
+                .reduce((acc, t) => acc + t.amount, 0);
+            cumulative -= dayChange; // step back
+        });
+
+        accLineChartInstance = new Chart(lineCanvas.getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: last7Days.map(d => d.slice(5)),
+                datasets: [{
+                    label: '總額',
+                    data: trendData,
+                    borderColor: '#3b82f6',
+                    tension: 0.3,
+                    fill: false
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } }
+            }
+        });
+
+        // --- Pie Chart: Expenses by Category (Current Month) ---
+        const now = new Date();
+        const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        const monthlyTransactions = state.accounting.transactions.filter(t => t.amount < 0 && t.date.startsWith(monthStr));
+
+        const categoryTotals = {};
+        monthlyTransactions.forEach(t => {
+            categoryTotals[t.category] = (categoryTotals[t.category] || 0) + Math.abs(t.amount);
+        });
+
+        const labels = Object.keys(categoryTotals);
+        const data = Object.values(categoryTotals);
+        // Default if no data
+        if (labels.length === 0) {
+            labels.push('無支出');
+            data.push(1);
+        }
+
+        const colors = ['#3b82f6', '#10b981', '#ef4444', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4'];
+
+        accPieChartInstance = new Chart(pieCanvas.getContext('2d'), {
+            type: 'pie',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: data,
+                    backgroundColor: colors,
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } }
+            }
+        });
+
+        // Custom Legend
+        const legendEl = els.accounting.charts.pieLegend;
+        if (legendEl) {
+            legendEl.innerHTML = labels.map((label, i) => `
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: ${colors[i % colors.length]}"></div>
+                    <span class="legend-label">${label}</span>
+                    <span class="legend-amount">${categoryTotals[label] ? categoryTotals[label].toLocaleString() : '-'}</span>
+                </div>
+            `).join('');
+        }
+    } catch (e) {
+        console.error("Render Accounting Charts Failed:", e);
     }
 }
 
@@ -907,7 +1067,7 @@ function addAccountingBank() {
 }
 
 function adjustBankBalance(id) {
-    const bank = state.accounting.banks.find(b => b.id === id);
+    const bank = state.accounting.banks.find(b => b.id == id);
     if (!bank) return;
     const newBalance = parseFloat(prompt(`強制調整 [${bank.name}] 餘額為:`, bank.balance.toString()));
     if (isNaN(newBalance)) return;
@@ -1048,7 +1208,7 @@ function showAccountingDayDetail(dateStr) {
 
 function removeAccountingTransaction(id) {
     if (!confirm('確定要刪除此筆紀錄嗎？相關銀行餘額將會退回。')) return;
-    const t = state.accounting.transactions.find(x => x.id === id);
+    const t = state.accounting.transactions.find(x => x.id == id);
     if (!t) return;
 
     const bank = state.accounting.banks.find(b => b.id === t.bankId);
@@ -1063,7 +1223,7 @@ function removeAccountingTransaction(id) {
 }
 
 function editAccountingTransaction(id) {
-    const t = state.accounting.transactions.find(x => x.id === id);
+    const t = state.accounting.transactions.find(x => x.id == id);
     if (!t) return;
 
     const newName = prompt('修改項目名稱 (留空則不變):', t.name || '');
@@ -1073,7 +1233,7 @@ function editAccountingTransaction(id) {
     const amountNum = parseFloat(newAmount);
     if (isNaN(amountNum)) return alert('金額格式錯誤');
 
-    const bank = state.accounting.banks.find(b => b.id === t.bankId);
+    const bank = state.accounting.banks.find(b => b.id == t.bankId);
     if (bank) bank.balance = bank.balance - t.amount + amountNum;
 
     t.name = newName !== null ? newName.trim() : (t.name || '');
@@ -1181,7 +1341,7 @@ function renderDataView() {
 }
 
 function undoTaskAction(taskId, dateStr) {
-    const task = state.tasks.find(t => t.id === taskId);
+    const task = state.tasks.find(t => t.id == taskId);
     if (!task) return;
 
     if (confirm(`確定要撤銷 [${task.name}] 在 ${dateStr} 的加(扣)分嗎？`)) {
@@ -1368,7 +1528,7 @@ function renderUntimedSidebar(weekDays) {
 
         // Check each day of the week if this task applies
         weekStrs.forEach(dStr => {
-            const applies = getTasksForDate(dStr).some(t => t.id === task.id);
+            const applies = getTasksForDate(dStr).some(t => t.id == task.id);
             if (applies) {
                 const isToday = dStr === todayStr;
                 const isDone = task.completedHistory && task.completedHistory[dStr];
@@ -1635,6 +1795,18 @@ function getTasksForDate(dateStr) {
             return true;
         }
 
+        // NEW: Bad Habit Logic
+        // Always appears daily starting from creation, UNLESS completed (checked) for that specific date
+        if (task.isBadHabit) {
+            const startStr = task.createdAt ? task.createdAt.split('T')[0] : '1970-01-01';
+            if (dateStr < startStr) return false;
+
+            // If completed today, HIDE it (User request: "勾選完後直到明天都不會出現")
+            if (task.completedHistory && task.completedHistory[dateStr]) return false;
+
+            return true;
+        }
+
         if (task.type === 'scheduled') {
             return task.date === dateStr;
         } else if (task.type === 'recurring') {
@@ -1726,7 +1898,7 @@ function createTaskEl(task, dateStr, showDateLabel) {
 }
 
 function toggleTask(taskId, dateStr, isChecked) {
-    const task = state.tasks.find(t => t.id === taskId);
+    const task = state.tasks.find(t => t.id == taskId);
     if (!task) return;
 
     if (!task.completedHistory) task.completedHistory = {};
@@ -1751,6 +1923,50 @@ function toggleTask(taskId, dateStr, isChecked) {
         // If they want "multiple times", it should probably reset.
         // Let's keep it checked for the day, but it stays in list tomorrow.
         task.completedHistory[dateStr] = isChecked;
+    } else if (task.isBadHabit) {
+        // NEW: Bad Habit Progressive Penalty Logic
+        if (!task.badHabitHistory) task.badHabitHistory = {};
+
+        if (isChecked) {
+            // "Doing" the bad habit -> Penalty
+            // 1. Calculate Penalty Amount
+            let penalty = Math.abs(task.score); // Default base score (Day 1)
+
+            // Find last penalty date and amount
+            const historyDates = Object.keys(task.badHabitHistory).sort();
+            if (historyDates.length > 0) {
+                const lastDate = historyDates[historyDates.length - 1]; // e.g. Yesterday
+                const lastPenalty = task.badHabitHistory[lastDate];
+
+                // Formula: Previous + Previous/2 = Previous * 1.5
+                // "以及原本該扣的分數" -> User said "第一天-30, 第二天就是第一天的一半+原本該扣的分數(30) = 15+30=45"
+                // Actually user said: "第二天就是第一天的一半+原本該扣的分數" -> 30/2 + 30 = 45.
+                // "第三天就是前面的分數加上一半的分數" -> 45 + 45/2 = 67.5 -> 68.
+                // So it is always Previous * 1.5.
+
+                penalty = Math.round(lastPenalty * 1.5);
+            }
+
+            // Apply Penalty (Subtract from stock)
+            state.stockPrice -= penalty;
+
+            // Record this specific penalty for this date (so we can calculate next day or undo)
+            task.badHabitHistory[dateStr] = penalty;
+            task.completedHistory[dateStr] = true; // Mark done so it disappears
+
+            console.log(`Bad Habit [${task.name}] done. Penalty: ${penalty}`);
+            alert(`壞習慣檢討：已扣除 ${penalty} 分\n(下次再犯將扣更多！)`);
+
+        } else {
+            // Unchecking (Undo) - NOTE: This might be hard to trigger if task is hidden!
+            // But if user finds it in "Data" view or we unhide it, we support undo.
+            if (task.badHabitHistory[dateStr]) {
+                const refund = task.badHabitHistory[dateStr];
+                state.stockPrice += refund;
+                delete task.badHabitHistory[dateStr];
+            }
+            task.completedHistory[dateStr] = false;
+        }
     } else {
         task.completedHistory[dateStr] = isChecked;
         if (isChecked && !wasChecked) {
@@ -2001,7 +2217,7 @@ function renderCharts(todaysTasks = []) {
                     if (isDone) return '#10b981'; // Green
                     if (t.importance === 'critical' || t.importance === 'high') return '#ef4444'; // Red
 
-                    // Past items (Gray out if not done?) or just blue
+                    // Past items
                     if (val[1] < currentFloat && !isDone) return '#6b7280'; // Gray for past overdue?
 
                     return '#3b82f6'; // Blue default
@@ -2045,6 +2261,16 @@ function renderCharts(todaysTasks = []) {
         plugins: [currentTimePlugin]
     });
     window.ganttChartInstance = ganttChartInstance; // Save Ref
+
+    // Re-attach click listener safely (Canvas was reset)
+    // Note: getElementById returns the NEW canvas element
+    const newGanttCanvas = document.getElementById('ganttChart');
+    if (newGanttCanvas) {
+        newGanttCanvas.onclick = () => {
+            console.log("Gantt Chart Clicked -> Weekly View");
+            renderView('focusedGantt');
+        };
+    }
 }
 
 // --- Add Logic ---
@@ -2074,20 +2300,28 @@ function handleAddSubmit(e) {
     const isMission = els.addForm.inputs.isMission && els.addForm.inputs.isMission.checked;
     const isPersistent = els.addForm.inputs.isPersistent && els.addForm.inputs.isPersistent.checked;
 
+    // NEW: Bad Habit
+    const isBadHabitEl = document.getElementById('isBadHabit');
+    const isBadHabit = isBadHabitEl && isBadHabitEl.checked;
+
     // Validation
     if (!name) return alert('請輸入名稱');
-    if (!isRecurring && !date) return alert('請選擇日期');
+    if (!isRecurring && !date && !isBadHabit) return alert('請選擇日期'); // Bad habit behaves like recurring daily
 
     const now = new Date();
     const todayStr = getLocalDateStr(now);
 
+    // Bad Habit defaults to created today
+    const effectiveDate = (isRecurring || isBadHabit) ? (recurrenceStartDate || todayStr) : date;
+
     const newTask = {
         id: Date.now(),
-        createdAt: isRecurring ? (recurrenceStartDate || todayStr) : date,
+        createdAt: effectiveDate,
         name,
-        type: isRecurring ? 'recurring' : 'scheduled',
+        type: isRecurring ? 'recurring' : (isBadHabit ? 'badHabit' : 'scheduled'), // can call it 'scheduled' with flag or new type
         isMission: isMission || false,
         isPersistent: isPersistent || false,
+        isBadHabit: isBadHabit || false,
         recurrence: isRecurring ? {
             type: recurrenceType,
             interval: recurrenceInterval,
@@ -2099,7 +2333,8 @@ function handleAddSubmit(e) {
         exceptions: [],
         importance,
         score,
-        completedHistory: {}
+        completedHistory: {},
+        badHabitHistory: {} // Record of when it was done and how much penalty
     };
 
     state.tasks.push(newTask);
@@ -2305,7 +2540,7 @@ function initiateDelete(task, dateStr) {
     } else {
         // Single Task
         if (confirm('確定要取消此行程嗎？')) {
-            state.tasks = state.tasks.filter(t => t.id !== taskToDelete.id);
+            state.tasks = state.tasks.filter(t => t.id != taskToDelete.id);
             finishDelete();
         }
     }
@@ -2606,7 +2841,7 @@ function setupGanttListeners() {
     if (g.projEditModal.addParentBtn) g.projEditModal.addParentBtn.onclick = addParentTaskSlotToEdit;
 }
 function openEditGanttProjectModal(projId) {
-    const proj = state.ganttSystem.projects.find(p => p.id === projId);
+    const proj = state.ganttSystem.projects.find(p => p.id == projId);
     if (!proj) return;
 
     document.getElementById('editProjId').value = projId;
@@ -2643,7 +2878,7 @@ function addParentTaskSlotToEdit() {
 function handleEditGanttProjectSubmit(e) {
     e.preventDefault();
     const projId = document.getElementById('editProjId').value;
-    const proj = state.ganttSystem.projects.find(p => p.id === projId);
+    const proj = state.ganttSystem.projects.find(p => p.id == projId);
 
     proj.name = document.getElementById('editProjName').value;
     proj.score = parseInt(document.getElementById('editProjScore').value);
@@ -2675,21 +2910,24 @@ function handleEditGanttProjectSubmit(e) {
 function handleDeleteGanttProject() {
     if (!confirm('確定要刪除整個企劃嗎？此操作不可撤銷。')) return;
     const projId = document.getElementById('editProjId').value;
-    state.ganttSystem.projects = state.ganttSystem.projects.filter(p => p.id !== projId);
+    state.ganttSystem.projects = state.ganttSystem.projects.filter(p => p.id != projId);
     saveState();
     els.gantt.projEditModal.el.classList.add('hidden');
     renderGanttMainPage();
 }
 
 function openEditGanttModal(projId, parentId, id, type) {
-    const proj = state.ganttSystem.projects.find(p => p.id === projId);
+    const proj = state.ganttSystem.projects.find(p => p.id == projId);
+    if (!proj) return;
     let item;
     if (type === 'parent') {
-        item = proj.parents.find(p => p.id === id);
+        item = proj.parents.find(p => p.id == id);
         document.getElementById('editGanttImportanceGroup').classList.add('hidden');
     } else {
-        const parent = proj.parents.find(p => p.id === parentId);
-        item = parent.children.find(c => c.id === id);
+        const parent = proj.parents.find(p => p.id == parentId);
+        if (!parent) return;
+        item = (parent.children || []).find(c => c.id == id);
+        if (!item) return;
         document.getElementById('editGanttImportanceGroup').classList.remove('hidden');
         document.getElementById('editGanttImportance').value = item.importance;
     }
@@ -2714,7 +2952,7 @@ function handleEditGanttTaskSubmit(e) {
     const id = document.getElementById('editGanttTaskId').value;
     const type = document.getElementById('editGanttType').value;
 
-    const proj = state.ganttSystem.projects.find(p => p.id === projId);
+    const proj = state.ganttSystem.projects.find(p => p.id == projId);
     const item = findGanttItem(proj.parents, id);
     if (!item) return;
 
@@ -2740,15 +2978,16 @@ function handleDeleteGanttTask() {
     const id = document.getElementById('editGanttTaskId').value;
     const type = document.getElementById('editGanttType').value;
 
-    const proj = state.ganttSystem.projects.find(p => p.id === projId);
+    const proj = state.ganttSystem.projects.find(p => p.id == projId);
+    if (!proj) return;
 
     if (type === 'parent') {
-        proj.parents = proj.parents.filter(p => p.id !== id);
+        proj.parents = proj.parents.filter(p => p.id != id);
     } else {
         // Find parent and remove child
         const parent = findGanttItem(proj.parents, parentId || '');
         if (parent && parent.children) {
-            parent.children = parent.children.filter(c => c.id !== id);
+            parent.children = parent.children.filter(c => c.id != id);
         }
     }
 
@@ -2829,14 +3068,14 @@ function renderGanttMainPage() {
         card.className = 'project-card';
 
         // Calculate progress
-        const totalItems = proj.parents.length + proj.parents.reduce((acc, p) => acc + p.children.length, 0);
+        const totalItems = proj.parents.length + proj.parents.reduce((acc, p) => acc + (p.children || []).length, 0);
         const completedItems = proj.parents.filter(p => p.completed).length +
-            proj.parents.reduce((acc, p) => acc + p.children.filter(c => c.completed).length, 0);
+            proj.parents.reduce((acc, p) => acc + (p.children || []).filter(c => c.completed).length, 0);
         const progress = totalItems > 0 ? (completedItems / totalItems) * 100 : 0;
 
         // Find today's task
         let todayTaskHtml = '<div style="font-size: 0.8rem; color: gray;">今日無任務</div>';
-        const todayChild = proj.parents.flatMap(p => p.children).find(c => todayStr >= c.startDate && todayStr <= c.endDate && !c.completed);
+        const todayChild = proj.parents.flatMap(p => p.children || []).find(c => todayStr >= c.startDate && todayStr <= c.endDate && !c.completed);
         const todayParent = proj.parents.find(p => todayStr >= p.startDate && todayStr <= p.endDate && !p.completed);
 
         if (todayChild) {
@@ -2865,30 +3104,38 @@ function renderGanttMainPage() {
 }
 
 function viewProjectDetail(projId) {
-    const proj = state.ganttSystem.projects.find(p => p.id === projId);
-    if (!proj) return;
+    try {
+        const proj = state.ganttSystem.projects.find(p => p.id == projId);
+        if (!proj) {
+            console.error("Project not found:", projId);
+            return;
+        }
 
-    renderView('ganttProjectDetail');
-    els.gantt.projDetailTitle.textContent = proj.name;
-    const container = els.gantt.projDetailContent;
-    container.innerHTML = '';
+        renderView('ganttProjectDetail');
+        els.gantt.projDetailTitle.textContent = proj.name;
+        const container = els.gantt.projDetailContent;
+        container.innerHTML = '';
 
-    proj.parents.forEach((parent, pIdx) => {
-        const isLocked = pIdx > 0 && !proj.parents[pIdx - 1].completed;
-        container.appendChild(renderGanttItemRecursive(proj, null, parent, 0, isLocked));
-    });
+        proj.parents.forEach((parent, pIdx) => {
+            const isLocked = pIdx > 0 && !proj.parents[pIdx - 1].completed;
+            container.appendChild(renderGanttItemRecursive(proj, null, parent, 0, isLocked));
+        });
 
-    // Add "Next Parent" button at the bottom
-    const addParentBtn = document.createElement('button');
-    addParentBtn.className = 'btn-primary full-width';
-    addParentBtn.style.marginTop = '20px';
-    addParentBtn.textContent = '+ 新增下一個父任務';
-    addParentBtn.onclick = () => {
-        // Open the project edit modal but specifically for adding a parent
-        openEditGanttProjectModal(projId);
-        // We might want to scroll to the parent list in that modal
-    };
-    container.appendChild(addParentBtn);
+        // Add "Next Parent" button at the bottom
+        const addParentBtn = document.createElement('button');
+        addParentBtn.className = 'btn-primary full-width';
+        addParentBtn.style.marginTop = '20px';
+        addParentBtn.textContent = '+ 新增下一個父任務';
+        addParentBtn.onclick = () => {
+            // Open the project edit modal but specifically for adding a parent
+            openEditGanttProjectModal(projId);
+            // We might want to scroll to the parent list in that modal
+        };
+        container.appendChild(addParentBtn);
+    } catch (e) {
+        console.error("View Project Detail Error:", e);
+        alert("無法開啟企劃詳情：資料可能已損毀");
+    }
 }
 
 function renderGanttItemRecursive(proj, parentId, item, level, isLocked) {
@@ -2903,21 +3150,21 @@ function renderGanttItemRecursive(proj, parentId, item, level, isLocked) {
     // If it's a child with nested children, it can only be completed if its children are all done.
     const childrenAllDone = areChildrenCompletedRecursive(item);
     const canCheck = !isLocked && childrenAllDone;
-    const canUncheck = item.completed && (isParent ? !proj.completed : true); // Simplified: can always uncheck if completed
 
     const itemHtml = `
         <div class="${isParent ? 'parent-header' : 'item-header'}" style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
             <div style="display: flex; align-items: center; gap: 8px; flex: 1;">
-                <input type="checkbox" class="task-checkbox" 
-                    ${item.completed ? 'checked' : ''} 
+                <input type="checkbox" class="task-checkbox"
+                    ${item.completed ? 'checked' : ''}
                     ${(item.completed || canCheck) ? '' : 'disabled'}
                     onchange="toggleGanttItem('${proj.id}', '${parentId || ''}', '${item.id}', this.checked)">
                 <span style="font-weight: ${isParent ? '700' : 'normal'}; ${item.completed ? 'text-decoration: line-through; opacity: 0.5;' : ''}">${item.name}</span>
             </div>
             <div style="display: flex; align-items: center; gap: 8px;">
                  <span style="font-size: 0.75rem; color: var(--text-secondary);">${item.score} 分</span>
-                 <button class="btn-icon-small" onclick="openEditGanttModal('${proj.id}', '${parentId || ''}', '${item.id}', '${isParent ? 'parent' : 'child'}')">✏️</button>
-                 <button class="btn-add-small" onclick="openAddChildModal('${proj.id}', '${item.id}')" ${item.completed ? 'disabled' : ''}>+ 子任務</button>
+                 <button class="btn-icon-small" title="編輯" onclick="openEditGanttModal('${proj.id}', '${parentId || ''}', '${item.id}', '${isParent ? 'parent' : 'child'}')">✏️</button>
+                 <button class="btn-icon-small" title="刪除" onclick="deleteGanttItem('${proj.id}', '${parentId || ''}', '${item.id}', '${isParent ? 'parent' : 'child'}')">🗑️</button>
+                 <button class="btn-add-small" onclick="openAddChildModal('${proj.id}', '${item.id}')">+ 子任務</button>
             </div>
         </div>
         ${isParent ? `<div style="font-size: 0.7rem; color: var(--text-secondary); margin-bottom: 8px;">範圍：${item.startDate} ~ ${item.endDate}</div>` : ''}
@@ -2938,8 +3185,9 @@ function renderGanttItemRecursive(proj, parentId, item, level, isLocked) {
 }
 
 function findGanttItem(items, id) {
+    if (!items) return null;
     for (const it of items) {
-        if (it.id === id) return it;
+        if (it.id == id) return it;
         if (it.children) {
             const found = findGanttItem(it.children, id);
             if (found) return found;
@@ -2954,12 +3202,13 @@ function areChildrenCompletedRecursive(item) {
 }
 
 function toggleGanttItem(projId, parentId, id, isChecked) {
-    const proj = state.ganttSystem.projects.find(p => p.id === projId);
+    const proj = state.ganttSystem.projects.find(p => p.id == projId);
+    if (!proj) return;
     const item = findGanttItem(proj.parents, id);
     if (!item) return;
 
     // Is it a parent? (level 0)
-    const isParent = proj.parents.some(p => p.id === id);
+    const isParent = proj.parents.some(p => p.id == id);
 
     if (item.completed && !isChecked) {
         state.stockPrice -= item.score;
@@ -3017,8 +3266,8 @@ function checkProjectCompletion(proj) {
 }
 
 function openAddChildModal(projId, parentOrChildId) {
-    const proj = state.ganttSystem.projects.find(p => p.id === projId);
-
+    const proj = state.ganttSystem.projects.find(p => p.id == projId);
+    if (!proj) return;
     const item = findGanttItem(proj.parents, parentOrChildId);
     if (!item) return;
 
@@ -3042,7 +3291,9 @@ function handleAddChildTaskSubmit(e) {
     e.preventDefault();
     const projId = document.getElementById('childProjectId').value;
     const parentId = document.getElementById('childParentId').value;
-    const proj = state.ganttSystem.projects.find(p => p.id === projId);
+
+    const proj = state.ganttSystem.projects.find(p => p.id == projId);
+    if (!proj) return;
     const item = findGanttItem(proj.parents, parentId);
     if (!item) return;
 
@@ -3069,6 +3320,30 @@ window.toggleGanttItem = toggleGanttItem;
 window.openAddChildModal = openAddChildModal;
 window.openEditGanttModal = openEditGanttModal;
 window.openEditGanttProjectModal = openEditGanttProjectModal;
+window.undoTaskAction = undoTaskAction;
+window.toggleTask = toggleTask;
+window.openEditModal = openEditModal;
+window.deleteGanttItem = deleteGanttItem;
+window.initiateDelete = initiateDelete;
+
+function deleteGanttItem(projId, parentId, id, type) {
+    if (!confirm('確定要刪除此項目嗎？')) return;
+
+    const proj = state.ganttSystem.projects.find(p => p.id == projId);
+    if (!proj) return;
+
+    if (type === 'parent') {
+        proj.parents = proj.parents.filter(p => p.id != id);
+    } else {
+        const parent = findGanttItem(proj.parents, parentId || '');
+        if (parent && parent.children) {
+            parent.children = parent.children.filter(c => c.id != id);
+        }
+    }
+
+    saveState();
+    viewProjectDetail(projId);
+}
 
 function mapImportance(imp) {
     const map = { critical: '重要', high: '還好', medium: '輕微', low: '不重要', daily: '日常' };
@@ -3076,7 +3351,12 @@ function mapImportance(imp) {
 }
 
 // Start
-init();
+try {
+    init();
+} catch (e) {
+    console.error("Critical Failure in Top-Level Init:", e);
+    alert("程式初始化失敗，請連繫開發者。");
+}
 // --- System Updates ---
 window.forceUpdate = async function () {
     if (!confirm('是否強制清除快取並更新至最新版本？(將會重新整理頁面)')) return;

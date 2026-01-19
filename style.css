@@ -909,7 +909,7 @@ select:focus {
 
 .task-locked {
     opacity: 0.5;
-    pointer-events: none;
+    /* pointer-events: none; - Removed to allow interaction with buttons in locked rows */
     filter: grayscale(1);
 }
 
