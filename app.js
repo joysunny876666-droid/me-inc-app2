@@ -544,6 +544,18 @@ function setupEventListeners() {
         };
     }
 
+    // Recurrence Type Toggle (Weekdays)
+    if (els.addForm.inputs.recurrenceType) {
+        els.addForm.inputs.recurrenceType.addEventListener('change', (e) => {
+            const daysDiv = document.getElementById('recurrenceWeekDays');
+            if (e.target.value === 'weekly') {
+                daysDiv.classList.remove('hidden');
+            } else {
+                daysDiv.classList.add('hidden');
+            }
+        });
+    }
+
     // Calendar
     if (els.calendar.prevBtn) els.calendar.prevBtn.onclick = () => {
         currentMonth.setMonth(currentMonth.getMonth() - 1);
@@ -1833,7 +1845,16 @@ function getTasksForDate(dateStr) {
                 return diffDays % interval === 0;
             } else if (rType === 'weekly') {
                 // Check if same day of week AND correct week interval
-                // diffDays % (7 * interval) === 0 checks if it's exactly N weeks apart on the same day
+                // Modified for Custom Weekdays
+                if (task.recurrence.daysOfWeek && task.recurrence.daysOfWeek.length > 0) {
+                    const currentDay = targetDate.getDay();
+                    if (!task.recurrence.daysOfWeek.includes(currentDay)) return false;
+
+                    // Interval check (Standard 7-day blocks from start date)
+                    const weeksPassed = Math.floor(diffDays / 7);
+                    return weeksPassed % interval === 0;
+                }
+
                 return diffDays % (7 * interval) === 0;
             } else if (rType === 'monthly') {
                 // Monthly logic: Same day of month, month diff % interval === 0
@@ -2283,6 +2304,14 @@ function handleAddSubmit(e) {
     const recurrenceInterval = parseInt(els.addForm.inputs.recurrenceInterval.value) || 1;
     const recurrenceStartDate = els.addForm.inputs.recurrenceStartDate.value;
 
+    // Get Weekdays
+    const recurrenceWeekDays = [];
+    if (recurrenceType === 'weekly') {
+        document.querySelectorAll('input[name="recurrenceDay"]:checked').forEach(cb => {
+            recurrenceWeekDays.push(parseInt(cb.value));
+        });
+    }
+
     const date = els.addForm.inputs.dateInput.value;
     const time = els.addForm.inputs.time.value; // HH:MM
 
@@ -2325,7 +2354,8 @@ function handleAddSubmit(e) {
         recurrence: isRecurring ? {
             type: recurrenceType,
             interval: recurrenceInterval,
-            startDate: recurrenceStartDate || todayStr
+            startDate: recurrenceStartDate || todayStr,
+            daysOfWeek: recurrenceWeekDays.length > 0 ? recurrenceWeekDays : null
         } : null,
         date: isRecurring ? null : date,
         time: time || null,
@@ -2345,6 +2375,7 @@ function handleAddSubmit(e) {
 
     // Reset state
     if (els.addForm.inputs.recurrenceGroup) els.addForm.inputs.recurrenceGroup.classList.add('hidden');
+    document.getElementById('recurrenceWeekDays').classList.add('hidden'); // Hide Weekdays
     if (els.addForm.inputs.dateGroup) {
         els.addForm.inputs.dateGroup.classList.remove('hidden');
     }
@@ -2517,15 +2548,20 @@ function initiateDelete(task, dateStr) {
 
         // Setup buttons
         els.deleteModal.btnSingle.onclick = () => {
-            // Single Cancel
-            if (!taskToDelete.exceptions) taskToDelete.exceptions = [];
-            taskToDelete.exceptions.push(dateToDelete);
+            // Single Cancel - RE-FETCH to prevent stale state
+            const freshTask = state.tasks.find(t => t.id === taskToDelete.id);
+            if (freshTask) {
+                if (!freshTask.exceptions) freshTask.exceptions = [];
+                freshTask.exceptions.push(dateToDelete);
+                saveState(); // Explicit save here
+            }
             finishDelete();
         };
 
         els.deleteModal.btnAll.onclick = () => {
             // All Cancel - Ask Confirmation
             if (confirm('確定要徹底刪除此重複任務嗎？(此動作無法復原)')) {
+                state.tasks = state.tasks.filter(t => t.taskToDelete ? t.id !== taskToDelete.id : t.id !== taskToDelete.id); // Guard
                 state.tasks = state.tasks.filter(t => t.id !== taskToDelete.id);
                 finishDelete();
             }
@@ -2579,6 +2615,7 @@ function openEditModal(task, dateStr) {
     els.editModal.time.value = task.time || '';
     if (els.editModal.endTime) els.editModal.endTime.value = task.endTime || '';
     if (els.editModal.score) els.editModal.score.value = task.score; // New Score Field
+    if (document.getElementById('editImportance')) document.getElementById('editImportance').value = task.importance || 'medium';
     if (els.editModal.isMission) els.editModal.isMission.checked = task.isMission || false;
 
     els.editModal.el.classList.remove('hidden');
@@ -2600,6 +2637,7 @@ function setupEditListeners() {
             const newTime = els.editModal.time.value;
             const newEndTime = els.editModal.endTime ? els.editModal.endTime.value : null;
             const newScore = parseFloat(els.editModal.score.value);
+            const newImportance = document.getElementById('editImportance') ? document.getElementById('editImportance').value : 'medium';
             const newIsMission = els.editModal.isMission ? els.editModal.isMission.checked : false;
             const newIsPersistent = els.editModal.isPersistent ? els.editModal.isPersistent.checked : false;
 
@@ -2649,6 +2687,7 @@ function setupEditListeners() {
                         date: newDate,
                         time: newTime,
                         score: newScore,
+                        importance: newImportance,
                         isMission: newIsMission,
                         isPersistent: newIsPersistent,
                         createdAt: new Date().toISOString()
@@ -2667,7 +2706,7 @@ function setupEditListeners() {
                 renderWeeklySchedule();
             } else {
                 // Regular Task
-                editPendingData = { name: newName, time: newTime, endTime: newEndTime, newDate: newDate, score: newScore, isMission: newIsMission, isPersistent: newIsPersistent };
+                editPendingData = { name: newName, time: newTime, endTime: newEndTime, newDate: newDate, score: newScore, importance: newImportance, isMission: newIsMission, isPersistent: newIsPersistent };
                 taskToEdit = task;
                 editOriginalDateVal = originalDate;
 
@@ -2681,6 +2720,7 @@ function setupEditListeners() {
                     task.endTime = newEndTime;
                     task.date = newDate;
                     task.score = newScore;
+                    task.importance = newImportance;
                     task.isMission = newIsMission;
                     task.isPersistent = newIsPersistent;
                     finishEdit();
@@ -2711,9 +2751,13 @@ function setupEditListeners() {
 }
 
 function updateRecurringSingle() {
+    // RE-FETCH task to avoid stale state
+    const freshTask = state.tasks.find(t => t.id === taskToEdit.id);
+    if (!freshTask) return alert('Task not found (concurrency error)');
+
     // 1. Add exception to old (Using ORIGINAL Date)
-    if (!taskToEdit.exceptions) taskToEdit.exceptions = [];
-    taskToEdit.exceptions.push(editOriginalDateVal);
+    if (!freshTask.exceptions) freshTask.exceptions = [];
+    freshTask.exceptions.push(editOriginalDateVal);
 
     // 2. Create new Single Scheduled Task (Using NEW Date)
     const newTask = {
@@ -2725,6 +2769,8 @@ function updateRecurringSingle() {
         name: editPendingData.name,
         time: editPendingData.time,
         endTime: editPendingData.endTime,
+        score: editPendingData.score,
+        importance: editPendingData.importance,
         isMission: editPendingData.isMission,
         isPersistent: editPendingData.isPersistent,
         exceptions: [], // Important: Reset exceptions for the new instance
@@ -2748,14 +2794,17 @@ function updateRecurringSingle() {
 }
 
 function updateRecurringFuture() {
+    // RE-FETCH task
+    const freshTask = state.tasks.find(t => t.id === taskToEdit.id);
+    if (!freshTask) return alert('Task not found');
+
     // 1. End old task yesterday relative to ORIGINAL Date
-    // This effectively stops the series before the instance we are editing.
     const targetDate = new Date(editOriginalDateVal);
     const yesterday = new Date(targetDate);
     yesterday.setDate(yesterday.getDate() - 1);
     const yesterdayStr = getLocalDateStr(yesterday);
 
-    taskToEdit.recurrence.endDate = yesterdayStr;
+    freshTask.recurrence.endDate = yesterdayStr;
 
     // 2. Create new Recurring Task starting from NEW Date
     const newTask = {
@@ -2764,11 +2813,13 @@ function updateRecurringFuture() {
         name: editPendingData.name,
         time: editPendingData.time,
         endTime: editPendingData.endTime,
+        score: editPendingData.score,
+        importance: editPendingData.importance,
         isMission: editPendingData.isMission,
         isPersistent: editPendingData.isPersistent,
         createdAt: editPendingData.newDate,
         recurrence: {
-            ...taskToEdit.recurrence,
+            ...freshTask.recurrence,
             startDate: editPendingData.newDate,
             endDate: null // Clear end date for new one
         },

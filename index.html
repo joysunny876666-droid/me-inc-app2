@@ -35,7 +35,7 @@
             <header class="header">
                 <div class="logo">Me Inc. <span
                         style="font-size: 0.8rem; opacity: 0.7; color: var(--text-secondary); cursor: pointer;"
-                        onclick="forceUpdate()">v5.1 (點我更新)</span></div>
+                        onclick="forceUpdate()">v5.2 (點我更新)</span></div>
                 <div class="current-price-container">
                     <span class="price-label">當前股價</span>
                     <h1 id="currentPrice" class="price-value">100.00</h1>
@@ -168,6 +168,29 @@
                                 </select>
                             </div>
                         </div>
+
+                        <!-- New Weekdays Selector -->
+                        <div id="recurrenceWeekDays" class="form-group hidden"
+                            style="background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px;">
+                            <label style="margin-bottom: 8px; display: block;">選擇星期 (多選)</label>
+                            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                                <label style="cursor: pointer; display: flex; align-items: center; gap: 4px;"><input
+                                        type="checkbox" name="recurrenceDay" value="1" style="width: auto;"> 一</label>
+                                <label style="cursor: pointer; display: flex; align-items: center; gap: 4px;"><input
+                                        type="checkbox" name="recurrenceDay" value="2" style="width: auto;"> 二</label>
+                                <label style="cursor: pointer; display: flex; align-items: center; gap: 4px;"><input
+                                        type="checkbox" name="recurrenceDay" value="3" style="width: auto;"> 三</label>
+                                <label style="cursor: pointer; display: flex; align-items: center; gap: 4px;"><input
+                                        type="checkbox" name="recurrenceDay" value="4" style="width: auto;"> 四</label>
+                                <label style="cursor: pointer; display: flex; align-items: center; gap: 4px;"><input
+                                        type="checkbox" name="recurrenceDay" value="5" style="width: auto;"> 五</label>
+                                <label style="cursor: pointer; display: flex; align-items: center; gap: 4px;"><input
+                                        type="checkbox" name="recurrenceDay" value="6" style="width: auto;"> 六</label>
+                                <label style="cursor: pointer; display: flex; align-items: center; gap: 4px;"><input
+                                        type="checkbox" name="recurrenceDay" value="0" style="width: auto;"> 日</label>
+                            </div>
+                        </div>
+
                         <div class="form-group">
                             <label>開始日期</label>
                             <input type="date" id="recurrenceStartDate">
@@ -399,6 +422,17 @@
                     <div class="form-group">
                         <label for="editScore">分數</label>
                         <input type="number" id="editScore" required placeholder="例如: 5">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="editImportance">重要程度</label>
+                        <select id="editImportance">
+                            <option value="critical">重要</option>
+                            <option value="high">還好</option>
+                            <option value="medium">輕微</option>
+                            <option value="low">不重要</option>
+                            <option value="daily">日常</option>
+                        </select>
                     </div>
 
                     <div class="form-group">
@@ -819,7 +853,7 @@
             </div>
         </div>
 
-        <script src="app.js?v=5.1"></script>
+        <script src="app.js?v=5.2"></script>
 </body>
 
 </html>
