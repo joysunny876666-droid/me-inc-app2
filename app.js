@@ -1720,6 +1720,26 @@ function completeMove(targetDate, targetHour) {
 }
 
 
+// Helper: Green-to-Red color gradient (0% = Green, 100% = Red)
+function getProgressColor(percentage) {
+    // 0% -> Green (#10b981), 50% -> Yellow (#f59e0b), 100% -> Red (#ef4444)
+    if (percentage <= 50) {
+        // Interpolate from Green to Yellow
+        const ratio = percentage / 50;
+        const r = Math.round(16 + (245 - 16) * ratio);
+        const g = Math.round(185 + (158 - 185) * ratio);
+        const b = Math.round(129 + (11 - 129) * ratio);
+        return `rgb(${r}, ${g}, ${b})`;
+    } else {
+        // Interpolate from Yellow to Red
+        const ratio = (percentage - 50) / 50;
+        const r = Math.round(245 + (239 - 245) * ratio);
+        const g = Math.round(158 + (68 - 158) * ratio);
+        const b = Math.round(11 + (68 - 11) * ratio);
+        return `rgb(${r}, ${g}, ${b})`;
+    }
+}
+
 function renderStartPage() {
     const todayStr = getLocalDateStr();
     const todaysTasks = getTasksForDate(todayStr); // Fix: Define this!
@@ -1791,9 +1811,8 @@ function renderStartPage() {
     // --- NEW: Daily Progress Bar Logic ---
     const progressContainer = document.getElementById('dailyProgressContainer');
     if (progressContainer) {
-        // Filter: No Mission, No Bad Habit, No negative scores (Deduction items)
+        // Filter: Include Mission, No Bad Habit, No negative scores (Deduction items)
         const validTodayTasks = combinedTasks.filter(t =>
-            !t.isMission &&
             !t.isBadHabit &&
             t.score >= 0 // Assuming deduction items have negative score
         );
@@ -1805,7 +1824,7 @@ function renderStartPage() {
         }).length;
 
         const dailyProgress = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
-        const pColor = dailyProgress === 100 ? 'var(--accent-success)' : 'linear-gradient(90deg, var(--accent-blue), var(--accent-purple))';
+        const pColor = getProgressColor(dailyProgress);
 
         progressContainer.innerHTML = `
             <div class="daily-progress-card">
@@ -3259,7 +3278,7 @@ function renderGanttMainPage() {
                 <span>${Math.round(progress)}% (${completedItems}/${totalItems})</span>
             </div>
             <div class="progress-container">
-                <div class="progress-bar" style="width: ${progress}%"></div>
+                <div class="progress-bar" style="width: ${progress}%; background: ${getProgressColor(progress)};"></div>
             </div>
             ${todayTaskHtml}
             <button class="btn-secondary small full-width" style="margin-top: 10px;" onclick="viewProjectDetail('${proj.id}')">查看詳細 / 任務管理</button>
