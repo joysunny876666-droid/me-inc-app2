@@ -3255,9 +3255,8 @@ function viewProjectDetail(projId) {
         addParentBtn.style.marginTop = '20px';
         addParentBtn.textContent = '+ 新增下一個父任務';
         addParentBtn.onclick = () => {
-            // Open the project edit modal but specifically for adding a parent
-            openEditGanttProjectModal(projId);
-            // We might want to scroll to the parent list in that modal
+            // Open the dedicated add parent task modal
+            openAddParentTaskModal(projId);
         };
         container.appendChild(addParentBtn);
     } catch (e) {
@@ -3500,7 +3499,7 @@ window.forceUpdate = async function () {
             }
         }
 
-        // 2. Clear Cache Storage
+        // List of keys to clear
         if ('caches' in window) {
             const keys = await caches.keys();
             await Promise.all(keys.map(key => caches.delete(key)));
@@ -3512,3 +3511,52 @@ window.forceUpdate = async function () {
         alert('清理失敗，請手動清除瀏覽器資料: ' + e.message);
     }
 };
+
+// --- Add Parent Task Logic ---
+function openAddParentTaskModal(projId) {
+    const proj = state.ganttSystem.projects.find(p => p.id == projId);
+    if (!proj) return;
+
+    document.getElementById('addParentProjId').value = projId;
+    // Default dates to project range
+    document.getElementById('newParentStart').value = proj.startDate;
+    document.getElementById('newParentEnd').value = proj.endDate;
+    document.getElementById('newParentStart').min = proj.startDate;
+    document.getElementById('newParentStart').max = proj.endDate;
+    document.getElementById('newParentEnd').min = proj.startDate;
+    document.getElementById('newParentEnd').max = proj.endDate;
+
+    // Clear name
+    document.getElementById('newParentName').value = '';
+
+    const modal = document.getElementById('addParentTaskModal');
+    modal.classList.remove('hidden');
+
+    // Setup close listener if not already (or just do it in setupGanttListeners? simpler here for immediate fix)
+    document.getElementById('closeAddParentTaskModalBtn').onclick = () => modal.classList.add('hidden');
+    document.getElementById('addParentTaskForm').onsubmit = handleAddParentTaskSubmit;
+}
+
+function handleAddParentTaskSubmit(e) {
+    e.preventDefault();
+    const projId = document.getElementById('addParentProjId').value;
+    const proj = state.ganttSystem.projects.find(p => p.id == projId);
+    if (!proj) return;
+
+    const newParent = {
+        id: `p-${Date.now()}`,
+        name: document.getElementById('newParentName').value,
+        score: parseInt(document.getElementById('newParentScore').value),
+        startDate: document.getElementById('newParentStart').value,
+        endDate: document.getElementById('newParentEnd').value,
+        children: [],
+        completed: false
+    };
+
+    proj.parents.push(newParent);
+    saveState();
+
+    document.getElementById('addParentTaskModal').classList.add('hidden');
+    viewProjectDetail(projId);
+}
+window.openAddParentTaskModal = openAddParentTaskModal;
