@@ -1758,10 +1758,16 @@ function renderStartPage() {
 
     // 2. All Schedule (All Today)
     const allPointTasks = todaysTasks;
-    allPointTasks.sort(timeSort);
+
+    // --- NEW: Combine with Gantt Tasks for Today ---
+    const ganttTasks = getGanttTasksForDate(todayStr);
+    const combinedTasks = [...allPointTasks, ...ganttTasks];
+
+    combinedTasks.sort(timeSort);
+
     if (els.dashboard.allList) {
         els.dashboard.allList.innerHTML = '';
-        allPointTasks.forEach(task => els.dashboard.allList.appendChild(createTaskEl(task, todayStr, false)));
+        combinedTasks.forEach(task => els.dashboard.allList.appendChild(createTaskEl(task, todayStr, false)));
     }
 
     // 3. Important (Critical Global)
@@ -1872,11 +1878,54 @@ function getTasksForDate(dateStr) {
     });
 }
 
+function getGanttTasksForDate(dateStr) {
+    if (!state.ganttSystem || !state.ganttSystem.projects) return [];
+    const tasks = [];
+
+    const collectRecursive = (item, projId, parentId) => {
+        // If has children, recurse (don't add this item)
+        if (item.children && item.children.length > 0) {
+            item.children.forEach(child => collectRecursive(child, projId, item.id));
+        } else {
+            // Leaf node (Lowest level). Check criteria.
+            if (dateStr >= item.startDate && dateStr <= item.endDate && !item.completed) {
+                tasks.push({
+                    id: item.id,
+                    name: item.name, // Lowest level name
+                    score: item.score,
+                    startDate: item.startDate,
+                    endDate: item.endDate,
+                    isGantt: true,
+                    type: 'gantt-leaf',
+                    projId: projId,
+                    parentId: parentId, // Direct parent ID (null if top-level)
+                    importance: item.importance || 'medium',
+                    completed: item.completed
+                });
+            }
+        }
+    };
+
+    state.ganttSystem.projects.forEach(proj => {
+        proj.parents.forEach(parent => {
+            // Start recursion from top-level parents
+            collectRecursive(parent, proj.id, null);
+        });
+    });
+    return tasks;
+}
+
 function createTaskEl(task, dateStr, showDateLabel) {
     const el = document.createElement('div');
     el.className = 'task-item';
 
-    const isCompleted = task.completedHistory && task.completedHistory[dateStr];
+    // Handle Gantt Completed State vs Normal
+    let isCompleted = false;
+    if (task.isGantt) {
+        isCompleted = task.completed;
+    } else {
+        isCompleted = task.completedHistory && task.completedHistory[dateStr];
+    }
     let timeLabel = '';
     if (task.time) {
         timeLabel = task.time;
@@ -1913,7 +1962,35 @@ function createTaskEl(task, dateStr, showDateLabel) {
     `;
 
     const checkbox = el.querySelector('.task-checkbox');
-    checkbox.onchange = () => toggleTask(task.id, dateStr, checkbox.checked);
+
+    if (task.isGantt) {
+        // Gantt specific handler
+        checkbox.onchange = () => {
+            // toggleGanttItem(projId, parentId, id, isChecked)
+            // Note: toggleGanttItem re-renders viewProjectDetail, we might need to re-render Start Page too.
+            // But toggleGanttItem ends with viewProjectDetail(projId). It doesn't call renderStartPage!
+            // We need to intercept or ensure renderStartPage updates.
+            // Actually, we can just call toggleGanttItem and THEN renderStartPage manually or wait for auto-refresh?
+            // Auto refresh is 60s. Better to update immediately.
+
+            toggleGanttItem(task.projId, task.parentId || '', task.id, checkbox.checked);
+            // Since toggleGanttItem saves state, we can re-render start.
+            // NOTE: toggleGanttItem calls viewProjectDetail which might try to find elements not on screen if we are in Start View.
+            // But viewProjectDetail checks if (!proj) return... and renders into 'ganttProjectDetailView'.
+            // If we are on Start View, we shouldn't switch view.
+
+            setTimeout(() => {
+                renderStartPage();
+            }, 100);
+        };
+        // Add visual cue
+        const nameEl = el.querySelector('.task-name');
+        if (nameEl) {
+            nameEl.innerHTML += ` <span style="font-size:0.7rem; color:var(--accent-blue);">(企劃)</span>`;
+        }
+    } else {
+        checkbox.onchange = () => toggleTask(task.id, dateStr, checkbox.checked);
+    }
 
     return el;
 }
