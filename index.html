@@ -35,7 +35,7 @@
             <header class="header">
                 <div class="logo">Me Inc. <span
                         style="font-size: 0.8rem; opacity: 0.7; color: var(--text-secondary); cursor: pointer;"
-                        onclick="forceUpdate()">v5.5 (點我更新)</span></div>
+                        onclick="forceUpdate()">v5.6 (點我更新)</span></div>
                 <div class="current-price-container">
                     <span class="price-label">當前股價</span>
                     <h1 id="currentPrice" class="price-value">100.00</h1>
@@ -77,38 +77,39 @@
                     </nav>
 
                     <!-- Tasks Section (3 Columns) -->
-                </section>
-                <section class="tasks-section">
-                    <!-- 1. Daily Routine (Left) -->
-                    <div class="tasks-column">
-                        <div class="column-header">
-                            <h2>日常任務</h2>
+                    <!-- Daily Progress Section -->
+                    <div id="dailyProgressContainer" class="daily-progress-section"></div>
+                    <section class="tasks-section">
+                        <!-- 1. Daily Routine (Left) -->
+                        <div class="tasks-column">
+                            <div class="column-header">
+                                <h2>日常任務</h2>
+                            </div>
+                            <div id="dailyRoutineList" class="task-list">
+                                <!-- JS Injected -->
+                            </div>
                         </div>
-                        <div id="dailyRoutineList" class="task-list">
-                            <!-- JS Injected -->
-                        </div>
-                    </div>
 
-                    <!-- 2. All Schedule (Middle) -->
-                    <div class="tasks-column">
-                        <div class="column-header">
-                            <h2>全部行程</h2>
+                        <!-- 2. All Schedule (Middle) -->
+                        <div class="tasks-column">
+                            <div class="column-header">
+                                <h2>全部行程</h2>
+                            </div>
+                            <div id="allTaskList" class="task-list">
+                                <!-- JS Injected -->
+                            </div>
                         </div>
-                        <div id="allTaskList" class="task-list">
-                            <!-- JS Injected -->
-                        </div>
-                    </div>
 
-                    <!-- 3. Important Matters (Right) -->
-                    <div class="tasks-column tasks-important">
-                        <div class="column-header warning-header">
-                            <h2>重要事項</h2>
+                        <!-- 3. Important Matters (Right) -->
+                        <div class="tasks-column tasks-important">
+                            <div class="column-header warning-header">
+                                <h2>重要事項</h2>
+                            </div>
+                            <div id="importantTaskList" class="task-list">
+                                <!-- JS Injected -->
+                            </div>
                         </div>
-                        <div id="importantTaskList" class="task-list">
-                            <!-- JS Injected -->
-                        </div>
-                    </div>
-                </section>
+                    </section>
 
             </main>
         </div>
@@ -601,7 +602,10 @@
                     <h3>總預算明細</h3>
                     <button id="closeAccBankBtn" class="close-btn">&times;</button>
                 </div>
-                <div class="detail-section">
+                <!-- Daily Progress Section -->
+                <div id="dailyProgressContainer" class="daily-progress-section"></div>
+
+                <div class="tasks-section">
                     <h4>各銀行餘額</h4>
                     <div id="bankBalanceList" class="detail-list"></div>
                 </div>

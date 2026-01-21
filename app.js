@@ -1786,6 +1786,39 @@ function renderStartPage() {
             els.dashboard.importantList.appendChild(createTaskEl(task, targetDate, true));
         });
     }
+
+
+    // --- NEW: Daily Progress Bar Logic ---
+    const progressContainer = document.getElementById('dailyProgressContainer');
+    if (progressContainer) {
+        // Filter: No Mission, No Bad Habit, No negative scores (Deduction items)
+        const validTodayTasks = combinedTasks.filter(t =>
+            !t.isMission &&
+            !t.isBadHabit &&
+            t.score >= 0 // Assuming deduction items have negative score
+        );
+
+        const totalCount = validTodayTasks.length;
+        const completedCount = validTodayTasks.filter(t => {
+            if (t.isGantt) return t.completed;
+            return t.completedHistory && t.completedHistory[todayStr];
+        }).length;
+
+        const dailyProgress = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
+        const pColor = dailyProgress === 100 ? 'var(--accent-success)' : 'linear-gradient(90deg, var(--accent-blue), var(--accent-purple))';
+
+        progressContainer.innerHTML = `
+            <div class="daily-progress-card">
+                <div class="daily-progress-header">
+                    <span>今日任務進度</span>
+                    <span>${Math.round(dailyProgress)}% (${completedCount}/${totalCount})</span>
+                </div>
+                <div class="progress-container">
+                    <div class="progress-bar" style="width: ${dailyProgress}%; background: ${pColor};"></div>
+                </div>
+            </div>
+        `;
+    }
 }
 
 function getTasksForDate(dateStr) {
@@ -3221,6 +3254,10 @@ function renderGanttMainPage() {
                 </div>
             </div>
             <div style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 4px;">期限：${proj.startDate} ~ ${proj.endDate}</div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 2px;">
+                <span>總進度</span>
+                <span>${Math.round(progress)}% (${completedItems}/${totalItems})</span>
+            </div>
             <div class="progress-container">
                 <div class="progress-bar" style="width: ${progress}%"></div>
             </div>

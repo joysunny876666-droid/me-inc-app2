@@ -1387,3 +1387,57 @@ select:focus {
         border-radius: 12px;
     }
 }
+
+/* Progress Bar Styles */
+.progress-container {
+    width: 100%;
+    height: 10px;
+    background-color: var(--bg-tertiary);
+    /* Darker background track */
+    border-radius: 5px;
+    margin: 8px 0;
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+}
+
+.progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent-blue), var(--accent-purple));
+    /* Gradient fill */
+    border-radius: 5px;
+    transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Daily Progress Section on Homepage */
+.daily-progress-section {
+    padding: 0 16px 16px;
+    /* Match header padding mostly */
+    margin-bottom: 10px;
+}
+
+.daily-progress-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: var(--shadow-sm);
+}
+
+.daily-progress-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+@media (max-width: 767px) {
+    .daily-progress-section {
+        /* On mobile, insert it into the flow naturally */
+        margin: 0 16px 16px;
+        /* align with hero price */
+        padding: 0;
+    }
+}
