@@ -1261,10 +1261,30 @@ function editAccountingTransaction(id) {
     }
 }
 
+function fixDataAnomalies() {
+    // Ensure all tasks have a 'type' property, default to 'daily'
+    state.tasks.forEach(task => {
+        if (!task.type) {
+            task.type = 'daily';
+        }
+    });
+
+    // Filter out tasks that are marked as 'isPersistent' from the main task list
+    // This assumes 'isPersistent' tasks should not appear in the regular task list
+    // but might be handled separately (e.g., in a different view or for specific calculations).
+    // If 'isPersistent' tasks are meant to be part of the main list but filtered for specific views,
+    // this logic might need adjustment based on the actual use case of 'isPersistent'.
+    state.tasks = state.tasks.filter(task => !task.isPersistent);
+
+    saveState();
+    console.log('Data anomalies fixed: tasks updated with default type and isPersistent tasks removed from main list.');
+}
+
 function resetStockPrice() {
     state.stockPrice = 100.00;
     state.history = [];
-    saveState();
+    loadState();
+    fixDataAnomalies(); // One-time fix for data issues
     renderView('start');
     alert('股價已重設為 100.00');
 }
@@ -1720,6 +1740,25 @@ function completeMove(targetDate, targetHour) {
 }
 
 
+// --- Data Correction Helper ---
+function fixDataAnomalies() {
+    let changed = false;
+    const targetNames = ["墨守辜城", "多鄰國"];
+
+    state.tasks.forEach(t => {
+        if (targetNames.includes(t.name) && t.importance === 'critical') {
+            t.importance = 'normal';
+            console.log(`Fixed importance for task: ${t.name}`);
+            changed = true;
+        }
+    });
+
+    if (changed) {
+        saveState();
+        console.log("Data anomalies fixed and state saved.");
+    }
+}
+
 // Helper: Green-to-Red color gradient (0% = Green, 100% = Red)
 function getProgressColor(percentage) {
     // 0% -> Green (#10b981), 50% -> Yellow (#f59e0b), 100% -> Red (#ef4444)
@@ -1811,9 +1850,10 @@ function renderStartPage() {
     // --- NEW: Daily Progress Bar Logic ---
     const progressContainer = document.getElementById('dailyProgressContainer');
     if (progressContainer) {
-        // Filter: Include Mission, No Bad Habit, No negative scores (Deduction items)
+        // Filter: Include Mission, No Bad Habit, No Irregular (Persistent), No negative scores
         const validTodayTasks = combinedTasks.filter(t =>
             !t.isBadHabit &&
+            !t.isPersistent && // Exclude "Irregular" tasks
             t.score >= 0 // Assuming deduction items have negative score
         );
 
