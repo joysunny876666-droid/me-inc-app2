@@ -703,14 +703,48 @@ function checkDailyPenaltiesOnLoad() {
     }
 
     // Gantt Project Penalties (Check if any project became overdue since last check)
+    // Gantt Penalties (Two-Layer: Project + Children)
     if (state.ganttSystem && state.ganttSystem.projects) {
         state.ganttSystem.projects.forEach(proj => {
+            // 1. Project Overall Penalty
             if (!proj.completed && todayStr > proj.endDate && !proj.penaltyApplied) {
                 state.stockPrice -= proj.score;
                 proj.penaltyApplied = true;
-                console.log(`Penalty applied for project: ${proj.name}`);
+                console.log(`Penalty applied for project: ${proj.name} (Project Overdue)`);
                 hasChanges = true;
             }
+
+            // 2. Child Item Penalties
+            // Helper to traverse and check leaf nodes
+            const checkChildren = (items) => {
+                items.forEach(item => {
+                    if (item.children && item.children.length > 0) {
+                        checkChildren(item.children);
+                    } else {
+                        // Leaf node
+                        if (!item.completed && todayStr > item.endDate && !item.penaltyApplied) {
+                            state.stockPrice -= item.score;
+                            item.penaltyApplied = true;
+                            console.log(`Penalty applied for Gantt item: ${item.name} (Item Overdue)`);
+                            hasChanges = true;
+                        }
+                    }
+                });
+            };
+
+            proj.parents.forEach(parent => {
+                // Check parent itself as an item? Yes, parents also have dates/scores
+                // But parents usually summarizing children. If parent has score, apply logic.
+                if (!parent.completed && todayStr > parent.endDate && !parent.penaltyApplied) {
+                    state.stockPrice -= parent.score;
+                    parent.penaltyApplied = true;
+                    console.log(`Penalty applied for Gantt parent: ${parent.name}`);
+                    hasChanges = true;
+                }
+
+                // Check children recursively
+                if (parent.children) checkChildren(parent.children);
+            });
         });
     }
 
@@ -2108,16 +2142,23 @@ function toggleTask(taskId, dateStr, isChecked) {
             // Find last penalty date and amount
             const historyDates = Object.keys(task.badHabitHistory).sort();
             if (historyDates.length > 0) {
-                const lastDate = historyDates[historyDates.length - 1]; // e.g. Yesterday
+                const lastDate = historyDates[historyDates.length - 1]; // Last recorded date
                 const lastPenalty = task.badHabitHistory[lastDate];
 
-                // Formula: Previous + Previous/2 = Previous * 1.5
-                // "以及原本該扣的分數" -> User said "第一天-30, 第二天就是第一天的一半+原本該扣的分數(30) = 15+30=45"
-                // Actually user said: "第二天就是第一天的一半+原本該扣的分數" -> 30/2 + 30 = 45.
-                // "第三天就是前面的分數加上一半的分數" -> 45 + 45/2 = 67.5 -> 68.
-                // So it is always Previous * 1.5.
+                // Check if lastDate is "Yesterday"
+                const today = new Date(dateStr);
+                const yesterday = new Date(today);
+                yesterday.setDate(today.getDate() - 1);
+                const yesterdayStr = getLocalDateStr(yesterday);
 
-                penalty = Math.round(lastPenalty * 1.5);
+                if (lastDate === yesterdayStr) {
+                    // Consecutive day: Increase penalty (Previous * 1.5)
+                    penalty = Math.round(lastPenalty * 1.5);
+                } else {
+                    // Not consecutive (broken chain): Reset to base penalty
+                    console.log(`Bad Habit chain broken (Last: ${lastDate}, Today: ${dateStr}). Resetting penalty.`);
+                    penalty = Math.abs(task.score);
+                }
             }
 
             // Apply Penalty (Subtract from stock)
