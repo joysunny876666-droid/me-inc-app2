@@ -500,6 +500,151 @@ function setupEventListeners() {
     if (els.data.resetBtn) els.data.resetBtn.onclick = resetStockPrice;
     if (els.nav.accountingBtn) els.nav.accountingBtn.onclick = () => renderView('accounting');
 
+    // Smart Search Logic
+    if (els.dashboard.searchBtn) {
+        els.dashboard.searchBtn.onclick = () => {
+            const input = els.dashboard.searchInput.value.trim();
+            if (!input) return alert('請輸入日期或關鍵字');
+
+            // 1. Date Check (YYYY-MM-DD)
+            const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+            if (dateRegex.test(input)) {
+                // Specific Date -> Show Detail Modal
+                const tasks = getTasksForDate(input);
+                showDetailModal(input, tasks);
+            } else {
+                // 2. Keyword Search -> Nearest 3 Items
+                const allTasks = [];
+                // Collect all instances (Regular + Gantt Leaf) for basic search
+                // Simplification: Search main state.tasks + Gantt leaves.
+                // Since Gantt leaves are complex to flatten with *dates*, we'll search project structure?
+                // Request says: "2/8 剪指甲..." implies it searches Scheduled tasks mainly.
+                // Let's search state.tasks first.
+
+                // Helper to get next occurrence of a task relative to Today
+                const todayStr = getLocalDateStr();
+
+                const candidates = [];
+
+                state.tasks.forEach(task => {
+                    if (task.name.includes(input)) {
+                        // Determine occurrence date
+                        let targetDate = null;
+                        if (task.type === 'scheduled') targetDate = task.date;
+                        else if (task.type === 'recurring') {
+                            // Find next occurrence from Today
+                            // Simple iterator? Limit to 365 days scan?
+                            let scanDate = new Date();
+                            for (let i = 0; i < 365; i++) {
+                                const dStr = getLocalDateStr(scanDate);
+                                if (getTasksForDate(dStr).find(t => t.id === task.id)) {
+                                    targetDate = dStr;
+                                    break;
+                                }
+                                scanDate.setDate(scanDate.getDate() + 1);
+                            }
+                        }
+
+                        // Bad Habit? Persistent?
+                        if (task.isBadHabit || task.isPersistent) targetDate = todayStr; // Treat as "Today"
+
+                        if (targetDate && targetDate >= todayStr) {
+                            candidates.push({ task, date: targetDate });
+                        }
+                    }
+                });
+
+                // Search Gantt
+                if (state.ganttSystem && state.ganttSystem.projects) {
+                    state.ganttSystem.projects.forEach(proj => {
+                        proj.parents.forEach(parent => {
+                            const checkItem = (item) => {
+                                if (item.name.includes(input)) {
+                                    if (!item.completed && item.endDate >= todayStr) {
+                                        // For Gantt, Use EndDate as reference? Or start? 
+                                        // "2/8 剪指甲" -> Date is execution date. Gantt item has range.
+                                        // Use startDate or nearest date in range? Let's use startDate if future, else Today if in range.
+                                        let d = item.startDate;
+                                        if (todayStr >= item.startDate && todayStr <= item.endDate) d = todayStr;
+                                        if (d >= todayStr) candidates.push({ task: item, date: d, isGantt: true });
+                                    }
+                                }
+                                if (item.children) item.children.forEach(checkItem);
+                            };
+                            checkItem(parent);
+                        });
+                    });
+                }
+
+                // Sort by Date (Nearest first)
+                candidates.sort((a, b) => a.date.localeCompare(b.date));
+
+                // Take top 3
+                const results = candidates.slice(0, 3);
+
+                if (results.length === 0) return alert('找不到相關項目 (僅搜尋今日及未來)');
+
+                // Show Result Modal (Reuse DetailModal? Or a custom list?)
+                // Reuse DetailModal with custom title? DetailModal expects DateStr.
+                // Let's verify instructions: "出現離今日最近的3項項目與日期"
+                // Alert or List? Let's use a simple Alert for now, or build a custom ephemeral list in DetailModal.
+                // Better: Show DetailModal with a "Search Results" pseudo-date title?
+                // But DetailModal renders specific tasks.
+                // Let's create a temporary view in the Detail Modal manually.
+
+                const list = els.modal.list;
+                list.innerHTML = '';
+                els.modal.label.textContent = `搜尋: "${input}" (最近3筆)`;
+
+                results.forEach(res => {
+                    // Create simple visual item
+                    const div = document.createElement('div');
+                    div.className = 'task-item'; // Reuse style
+                    div.style.background = 'var(--bg-secondary)';
+                    div.style.cursor = 'pointer'; // Indicate clickability
+
+                    // Navigation Action
+                    const goToDetail = (e) => {
+                        if (e) e.stopPropagation(); // Prevent double trigger if button inside div
+                        const dailyTasks = getTasksForDate(res.date);
+                        // Ensure Gantt item is visible
+                        if (res.isGantt) {
+                            if (!dailyTasks.some(t => t.id === res.task.id)) {
+                                dailyTasks.push(res.task);
+                            }
+                        }
+                        showDetailModal(res.date, dailyTasks);
+                    };
+
+                    div.innerHTML = `
+                        <div class="task-info">
+                             <div class="task-name">
+                                <span style="color:var(--accent-blue); margin-right:8px;">${res.date}</span>
+                                ${res.task.name}
+                             </div>
+                             <div class="task-meta">
+                                ${res.isGantt ? '[甘特圖]' : '[行程]'}
+                             </div>
+                        </div>
+                        <div class="task-actions">
+                            <button class="btn-icon-small" title="查看當日行程" style="width:auto; padding:0 8px;">
+                                ➡️ 前往
+                            </button>
+                        </div>
+                    `;
+
+                    div.onclick = goToDetail;
+                    const btn = div.querySelector('button');
+                    if (btn) btn.onclick = goToDetail;
+
+                    list.appendChild(div);
+                });
+
+                els.modal.el.classList.remove('hidden');
+            }
+        };
+    }
+
     // Chart Click Navigation
     const ctxGantt = document.getElementById('ganttChart');
     if (ctxGantt) {
@@ -706,10 +851,18 @@ function checkDailyPenaltiesOnLoad() {
     // Gantt Penalties (Two-Layer: Project + Children)
     if (state.ganttSystem && state.ganttSystem.projects) {
         state.ganttSystem.projects.forEach(proj => {
+            // Skip if project is paused
+            if (proj.isPaused) return;
+
             // 1. Project Overall Penalty
             if (!proj.completed && todayStr > proj.endDate && !proj.penaltyApplied) {
                 state.stockPrice -= proj.score;
+
+                // Record History for Data View
+                if (!proj.penaltyHistory) proj.penaltyHistory = {};
+                proj.penaltyHistory[todayStr] = true;
                 proj.penaltyApplied = true;
+
                 console.log(`Penalty applied for project: ${proj.name} (Project Overdue)`);
                 hasChanges = true;
             }
@@ -724,7 +877,12 @@ function checkDailyPenaltiesOnLoad() {
                         // Leaf node
                         if (!item.completed && todayStr > item.endDate && !item.penaltyApplied) {
                             state.stockPrice -= item.score;
+
+                            // Record History
+                            if (!item.penaltyHistory) item.penaltyHistory = {};
+                            item.penaltyHistory[todayStr] = true;
                             item.penaltyApplied = true;
+
                             console.log(`Penalty applied for Gantt item: ${item.name} (Item Overdue)`);
                             hasChanges = true;
                         }
@@ -733,11 +891,14 @@ function checkDailyPenaltiesOnLoad() {
             };
 
             proj.parents.forEach(parent => {
-                // Check parent itself as an item? Yes, parents also have dates/scores
-                // But parents usually summarizing children. If parent has score, apply logic.
+                // Check parent itself
                 if (!parent.completed && todayStr > parent.endDate && !parent.penaltyApplied) {
                     state.stockPrice -= parent.score;
+
+                    if (!parent.penaltyHistory) parent.penaltyHistory = {};
+                    parent.penaltyHistory[todayStr] = true;
                     parent.penaltyApplied = true;
+
                     console.log(`Penalty applied for Gantt parent: ${parent.name}`);
                     hasChanges = true;
                 }
@@ -1325,12 +1486,44 @@ function renderDataView() {
     const tasks = getTasksForDate(targetStr);
     let totalChange = 0;
 
+    // Daily Tasks Calculation
     tasks.forEach(task => {
         const isCompleted = task.completedHistory && task.completedHistory[targetStr];
         const isPenalized = task.penaltyHistory && task.penaltyHistory[targetStr];
         if (isCompleted) totalChange += task.score;
         else if (isPenalized) totalChange -= task.score;
     });
+
+    // Gantt Items Calculation (Project + Items)
+    const activeGanttItems = [];
+    if (state.ganttSystem && state.ganttSystem.projects) {
+        state.ganttSystem.projects.forEach(proj => {
+            // Project Penalty
+            if (proj.penaltyHistory && proj.penaltyHistory[targetStr]) {
+                activeGanttItems.push({ type: 'project', name: proj.name, score: proj.score, isPenalized: true, obj: proj });
+                totalChange -= proj.score;
+            }
+
+            // Traverse items
+            const checkItem = (item) => {
+                if (item.completedHistory && item.completedHistory[targetStr]) {
+                    activeGanttItems.push({ type: 'item', name: item.name, score: item.score, isCompleted: true, obj: item });
+                    // Calculate score with bonus logic if needed? 
+                    // For now, use base score because tracking bonus historically is hard without logs.
+                    // Adjust 'totalChange' approximately.
+                    let gain = item.score;
+                    if (item.importance === 'importance-dark-red') gain += 4;
+                    else if (item.importance === 'importance-light-red') gain += 2;
+                    totalChange += gain;
+                } else if (item.penaltyHistory && item.penaltyHistory[targetStr]) {
+                    activeGanttItems.push({ type: 'item', name: item.name, score: item.score, isPenalized: true, obj: item });
+                    totalChange -= item.score;
+                }
+                if (item.children) item.children.forEach(checkItem);
+            };
+            proj.parents.forEach(p => checkItem(p));
+        });
+    }
 
     if (els.data.totalChange) {
         els.data.totalChange.textContent = `${totalChange >= 0 ? '+' : ''}${totalChange.toFixed(2)}`;
@@ -1341,18 +1534,13 @@ function renderDataView() {
         els.data.tableContainer.innerHTML = '';
         const table = document.createElement('table');
         table.className = 'data-table';
-        table.innerHTML = `
-            <thead>
-                <tr>
-                    <th>項目</th>
-                    <th style="text-align:center;">得分異動</th>
-                    <th style="text-align:right;">操作</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${tasks.map(task => {
+
+        // Combine Tasks and Gantt Items
+        // Daily Tasks Rows
+        const dailyRows = tasks.map(task => {
             const isCompleted = task.completedHistory && task.completedHistory[targetStr];
             const isPenalized = task.penaltyHistory && task.penaltyHistory[targetStr];
+            if (!isCompleted && !isPenalized) return ''; // Skip inactive
 
             let scoreDisplay = '0';
             let statusText = '執行中';
@@ -1368,26 +1556,165 @@ function renderDataView() {
                 statusClass = 'status-warning';
             }
 
-            const canUndo = isCompleted || isPenalized;
+            const canUndo = true; // Simplified
 
             return `
-                        <tr>
-                            <td>
-                                <div>${task.name}</div>
-                                <div style="font-size:0.7rem; color:var(--text-secondary);">${statusText}</div>
-                            </td>
-                            <td style="text-align:center; font-family:monospace; font-weight:600; color:${isPenalized ? 'var(--accent-red)' : (isCompleted ? 'var(--accent-green)' : 'inherit')}">${scoreDisplay}</td>
-                            <td style="text-align:right;">
-                                ${canUndo ? `<button onclick="undoTaskAction(${task.id}, '${targetStr}')" class="btn-icon-small" title="撤銷">撤銷</button>` : '-'}
-                            </td>
-                        </tr>
-                    `;
-        }).join('')}
+                <tr>
+                    <td>
+                        <div>${task.name} <span style="font-size:0.7em; opacity:0.7;">(日常)</span></div>
+                        <div style="font-size:0.7rem; color:var(--text-secondary);">${statusText}</div>
+                    </td>
+                    <td style="text-align:center; font-family:monospace; font-weight:600; color:${isPenalized ? 'var(--accent-red)' : (isCompleted ? 'var(--accent-green)' : 'inherit')}">${scoreDisplay}</td>
+                    <td style="text-align:right;">
+                        ${canUndo ? `<button onclick="undoTaskAction(${task.id}, '${targetStr}')" class="btn-icon-small" title="撤銷">撤銷</button>` : '-'}
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+        // Gantt Rows
+        const ganttRows = activeGanttItems.map(item => {
+            let scoreDisplay = '0';
+            let statusText = '甘特圖';
+
+            if (item.isCompleted) {
+                scoreDisplay = `+${item.score}`; // Simplified, bonus not shown exactly but ok
+                statusText = '已完成';
+            } else if (item.isPenalized) {
+                scoreDisplay = `-${item.score}`;
+                statusText = '逾期扣分';
+            }
+
+            return `
+                <tr>
+                    <td>
+                        <div>${item.name} <span style="font-size:0.7em; opacity:0.7;">(甘特)</span></div>
+                        <div style="font-size:0.7rem; color:var(--text-secondary);">${statusText}</div>
+                    </td>
+                    <td style="text-align:center; font-family:monospace; font-weight:600; color:${item.isPenalized ? 'var(--accent-red)' : 'var(--accent-green)'}">${scoreDisplay}</td>
+                    <td style="text-align:right;">-</td> <!-- Undo not implemented for Gantt yet -->
+                </tr>
+            `;
+        }).join('');
+
+
+        table.innerHTML = `
+            <thead>
+                <tr>
+                    <th>項目</th>
+                    <th style="text-align:center;">得分異動</th>
+                    <th style="text-align:right;">操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${dailyRows}
+                ${ganttRows}
             </tbody>
         `;
         els.data.tableContainer.appendChild(table);
+
+        // --- Gantt Pause/Resume UI (Per Project) ---
+        // Ensure Gantt System exists
+        if (state.ganttSystem && state.ganttSystem.projects.length > 0) {
+            const pauseContainer = document.createElement('div');
+            pauseContainer.style.marginTop = '20px';
+            pauseContainer.style.padding = '15px';
+            pauseContainer.style.backgroundColor = 'var(--bg-secondary)';
+            pauseContainer.style.borderRadius = 'var(--radius-md)';
+
+            let projectsHtml = `
+                <h3 style="margin-bottom:10px; color:var(--text-primary); text-align:center;">甘特圖企劃狀態</h3>
+                <div style="display:flex; flex-direction:column; gap:10px;">
+            `;
+
+            state.ganttSystem.projects.forEach(proj => {
+                const isPaused = proj.isPaused;
+                projectsHtml += `
+                    <div style="display:flex; justify-content:space-between; align-items:center; background:var(--bg-primary); padding:10px; border-radius:8px;">
+                        <div>
+                            <div style="font-weight:bold;">${proj.name}</div>
+                            <div style="font-size:0.8rem; color:${isPaused ? 'var(--accent-red)' : 'var(--accent-green)'};">
+                                ${isPaused ? `已暫停 (自 ${proj.pauseStartDate})` : '執行中'}
+                            </div>
+                        </div>
+                        <button onclick="toggleGanttPause('${proj.id}')" class="${isPaused ? 'btn-primary' : 'btn-bad'}" style="font-size:0.8rem; padding:4px 8px;">
+                            ${isPaused ? '▶️ 恢復' : '⏸️ 暫停'}
+                        </button>
+                    </div>
+                `;
+            });
+
+            projectsHtml += `</div>`;
+            pauseContainer.innerHTML = projectsHtml;
+            els.data.tableContainer.appendChild(pauseContainer);
+        }
     }
 }
+
+function toggleGanttPause(projId) {
+    if (!state.ganttSystem) return;
+    const proj = state.ganttSystem.projects.find(p => p.id == projId);
+    if (!proj) return;
+
+    if (proj.isPaused) {
+        // RESUME
+        const pauseStart = new Date(proj.pauseStartDate);
+        const today = new Date();
+        const todayStr = getLocalDateStr(today);
+
+        // Calculate Days Paused
+        const diffTime = today - pauseStart;
+        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+        if (confirm(`確定要恢復企劃 [${proj.name}] 嗎？\n已暫停 ${diffDays} 天。\n該企劃所有未完成的項目日期將往後延展 ${diffDays} 天。`)) {
+
+            if (diffDays > 0) {
+                // Shift Dates Logic
+                const shiftDate = (dateStr, days) => {
+                    const d = new Date(dateStr);
+                    d.setDate(d.getDate() + days);
+                    return getLocalDateStr(d);
+                };
+
+                if (!proj.completed) {
+                    // Shift Project End Date
+                    proj.endDate = shiftDate(proj.endDate, diffDays);
+
+                    // Shift Uncompleted Children
+                    const checkItem = (item) => {
+                        if (!item.completed) {
+                            item.endDate = shiftDate(item.endDate, diffDays);
+                            item.startDate = shiftDate(item.startDate, diffDays);
+                        }
+                        if (item.children) item.children.forEach(checkItem);
+                    };
+                    proj.parents.forEach(p => checkItem(p));
+                }
+                alert(`企劃 [${proj.name}] 已恢復！相關日期已延後 ${diffDays} 天。`);
+            } else {
+                alert(`企劃 [${proj.name}] 已恢復 (暫停時間不足1天，無日期變動)。`);
+            }
+
+            proj.isPaused = false;
+            proj.pauseStartDate = null;
+            saveState();
+            renderDataView(); // Refresh UI
+        }
+
+    } else {
+        // PAUSE
+        if (confirm(`確定要暫停企劃 [${proj.name}] 嗎？\n暫停期間不會計算逾期，恢復時將自動依暫停天數延後截止日期。`)) {
+            proj.isPaused = true;
+            proj.pauseStartDate = getLocalDateStr();
+            saveState();
+            renderDataView(); // Refresh UI
+        }
+    }
+}
+
+// Global expose
+window.toggleGanttPause = toggleGanttPause;
+
 
 function undoTaskAction(taskId, dateStr) {
     const task = state.tasks.find(t => t.id == taskId);
@@ -3369,16 +3696,26 @@ function viewProjectDetail(projId) {
             container.appendChild(renderGanttItemRecursive(proj, null, parent, 0, isLocked));
         });
 
+        // Visualization Button
+        const vizBtn = document.createElement('button');
+        vizBtn.className = 'btn-secondary small full-width'; // Or place in header
+        vizBtn.style.marginTop = '10px';
+        vizBtn.style.textAlign = 'center';
+        vizBtn.textContent = '📊 甘特圖視覺化 (Visualization)';
+        vizBtn.onclick = () => renderGanttVisualization(projId);
+        container.appendChild(vizBtn);
+
         // Add "Next Parent" button at the bottom
         const addParentBtn = document.createElement('button');
         addParentBtn.className = 'btn-primary full-width';
-        addParentBtn.style.marginTop = '20px';
+        addParentBtn.style.marginTop = '10px';
         addParentBtn.textContent = '+ 新增下一個父任務';
         addParentBtn.onclick = () => {
             // Open the dedicated add parent task modal
             openAddParentTaskModal(projId);
         };
         container.appendChild(addParentBtn);
+
     } catch (e) {
         console.error("View Project Detail Error:", e);
         alert("無法開啟企劃詳情：資料可能已損毀");
@@ -3391,16 +3728,52 @@ function renderGanttItemRecursive(proj, parentId, item, level, isLocked) {
     div.className = isParent ? `parent-task-item ${isLocked ? 'task-locked' : ''}` : `child-task-item ${item.importance || 'medium'}`;
     div.style.marginLeft = level > 0 ? '15px' : '0';
 
-    const hasChildren = item.children && item.children.length > 0;
+    // Drag and Drop Attributes for Parents
+    if (isParent) {
+        div.draggable = true;
+        div.style.cursor = 'grab';
+        div.dataset.id = item.id;
+        div.dataset.projId = proj.id;
 
-    // Check if this specific item is disabled
-    // If it's a child with nested children, it can only be completed if its children are all done.
+        div.ondragstart = (e) => {
+            e.dataTransfer.setData('text/plain', item.id);
+            e.dataTransfer.setData('projId', proj.id);
+            div.classList.add('dragging');
+        };
+
+        div.ondragend = () => {
+            div.classList.remove('dragging');
+            document.querySelectorAll('.parent-task-item').forEach(el => el.classList.remove('drag-over'));
+        };
+
+        div.ondragover = (e) => {
+            e.preventDefault(); // Necessary for drop
+            div.classList.add('drag-over');
+        };
+
+        div.ondragleave = () => {
+            div.classList.remove('drag-over');
+        };
+
+        div.ondrop = (e) => {
+            e.preventDefault();
+            const draggedId = e.dataTransfer.getData('text/plain');
+            const sourceProjId = e.dataTransfer.getData('projId'); // Ensure same project
+            if (sourceProjId !== proj.id) return;
+            if (draggedId === item.id) return;
+
+            handleParentReorder(proj.id, draggedId, item.id); // draggedId dropped ONTO item.id
+        };
+    }
+
+    const hasChildren = item.children && item.children.length > 0;
     const childrenAllDone = areChildrenCompletedRecursive(item);
     const canCheck = !isLocked && childrenAllDone;
 
     const itemHtml = `
         <div class="${isParent ? 'parent-header' : 'item-header'}" style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
             <div style="display: flex; align-items: center; gap: 8px; flex: 1;">
+                 ${isParent ? '<span style="cursor:grab; opacity:0.5;">☰</span>' : ''}
                 <input type="checkbox" class="task-checkbox"
                     ${item.completed ? 'checked' : ''}
                     ${(item.completed || canCheck) ? '' : 'disabled'}
@@ -3431,6 +3804,250 @@ function renderGanttItemRecursive(proj, parentId, item, level, isLocked) {
     return div;
 }
 
+function handleParentReorder(projId, draggedId, targetId) {
+    const proj = state.ganttSystem.projects.find(p => p.id == projId);
+    if (!proj) return;
+
+    const fromIdx = proj.parents.findIndex(p => p.id == draggedId);
+    const toIdx = proj.parents.findIndex(p => p.id == targetId);
+
+    if (fromIdx < 0 || toIdx < 0) return;
+
+    // Move logic
+    const [moved] = proj.parents.splice(fromIdx, 1);
+    proj.parents.splice(toIdx, 0, moved);
+
+    saveState();
+    viewProjectDetail(projId);
+}
+
+function openAddParentTaskModal(projId) {
+    document.getElementById('addParentProjId').value = projId;
+    document.getElementById('addParentName').value = '';
+    document.getElementById('addParentScore').value = 50;
+
+    // Default dates: today
+    const today = getLocalDateStr();
+    document.getElementById('addParentStart').value = today;
+    document.getElementById('addParentEnd').value = today;
+
+    document.getElementById('addParentInsertTop').checked = false;
+
+    const modal = document.getElementById('addParentTaskModal');
+    modal.classList.remove('hidden');
+
+    // Bind verify
+    const closeBtn = document.getElementById('closeAddParentModalBtn');
+    if (closeBtn) closeBtn.onclick = () => modal.classList.add('hidden');
+
+    const form = document.getElementById('addParentTaskForm');
+    form.onsubmit = (e) => {
+        e.preventDefault();
+        handleAddParentTaskSubmit();
+    };
+}
+
+function handleAddParentTaskSubmit() {
+    const projId = document.getElementById('addParentProjId').value;
+    const name = document.getElementById('addParentName').value;
+    const score = parseInt(document.getElementById('addParentScore').value);
+    const startDate = document.getElementById('addParentStart').value;
+    const endDate = document.getElementById('addParentEnd').value;
+    const insertTop = document.getElementById('addParentInsertTop').checked;
+
+    const newParent = {
+        id: `p-${Date.now()}`,
+        name,
+        score,
+        startDate,
+        endDate,
+        children: [],
+        completed: false
+    };
+
+    const proj = state.ganttSystem.projects.find(p => p.id == projId);
+    if (proj) {
+        if (insertTop) {
+            proj.parents.unshift(newParent);
+        } else {
+            proj.parents.push(newParent);
+        }
+        saveState();
+        document.getElementById('addParentTaskModal').classList.add('hidden');
+        viewProjectDetail(projId);
+        renderGanttVisualization(projId); // Refresh viz if open? Usually we are in detail view.
+    }
+}
+
+function renderGanttVisualization(projId) {
+    const proj = state.ganttSystem.projects.find(p => p.id == projId);
+    if (!proj) return;
+
+    const modal = document.getElementById('detailModal'); // Reuse detail modal for viz? Or create full page?
+    // Request says "New Web Page". But usually we just render a view in our SPA.
+    // Let's create a dedicated CONTAINER in our View Stack, reusing 'focusedGanttView' or similar?
+    // "Gantt Visualization Page" -> Let's interpret as a View like 'ganttProjectDetail'.
+    // Let's create a temporary overlay or reuse the modal but make it wide?
+    // User: "New Web Page for Gantt Visualization".
+    // I can render it into `els.gantt.projDetailContent` REPLACING lists?
+    // Best: Clear content and render Visualization there, with a "Back to List" button.
+
+    const container = els.gantt.projDetailContent;
+    container.innerHTML = ''; // clear list
+
+    // Header Back
+    const backBtn = document.createElement('button');
+    backBtn.className = 'btn-secondary small';
+    backBtn.textContent = '← 返回列表';
+    backBtn.style.marginBottom = '15px';
+    backBtn.onclick = () => viewProjectDetail(projId);
+    container.appendChild(backBtn);
+
+    const title = document.createElement('h3');
+    title.textContent = `視覺化圖表：${proj.name}`;
+    title.style.marginBottom = '15px';
+    container.appendChild(title);
+
+    // Canvas Container
+    const canvasContainer = document.createElement('div');
+    canvasContainer.style.position = 'relative';
+    canvasContainer.style.height = '400px';
+    canvasContainer.style.overflowX = 'auto'; // Horizontal scroll
+    canvasContainer.style.overflowY = 'auto'; // Vertical scroll
+    canvasContainer.style.border = '1px solid var(--border-color)';
+    canvasContainer.style.borderRadius = '8px';
+    canvasContainer.style.padding = '10px';
+
+    // We need to calculate date range.
+    const allDates = [];
+    allDates.push(proj.startDate, proj.endDate);
+    proj.parents.forEach(p => { allDates.push(p.startDate, p.endDate); });
+    // Also include children? Usually children are within parent range, but just in case.
+
+    allDates.sort();
+    const minDateStr = allDates[0]; // Start
+    const maxDateStr = allDates[allDates.length - 1]; // End
+
+    const minDate = new Date(minDateStr);
+    const maxDate = new Date(maxDateStr);
+    // Add margin
+    maxDate.setDate(maxDate.getDate() + 2);
+
+    const dayWidth = 40; // px
+    const headerHeight = 30; // px
+    const rowHeight = 40; // px
+
+    const totalDays = Math.max(1, Math.floor((maxDate - minDate) / (1000 * 60 * 60 * 24)));
+    const totalWidth = totalDays * dayWidth;
+    const totalHeight = (proj.parents.length + 1) * rowHeight + headerHeight + 50; // +1 for project itself? Or just parents
+
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(container.clientWidth - 40, totalWidth); // At least container width
+    canvas.height = totalHeight;
+    canvasContainer.appendChild(canvas);
+    container.appendChild(canvasContainer);
+
+    const ctx = canvas.getContext('2d');
+
+    // Helper
+    const getX = (dStr) => {
+        const d = new Date(dStr);
+        const diff = Math.floor((d - minDate) / (1000 * 60 * 60 * 24));
+        return diff * dayWidth;
+    };
+
+    // Draw Grid & Dates
+    ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--bg-primary').trim();
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.strokeStyle = '#30363d';
+    ctx.font = '12px sans-serif';
+    ctx.fillStyle = '#8b949e';
+
+    for (let i = 0; i <= totalDays; i++) {
+        const x = i * dayWidth;
+        // Line
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, canvas.height);
+        ctx.stroke();
+
+        // Date Label
+        const curr = new Date(minDate);
+        curr.setDate(curr.getDate() + i);
+        const dStr = `${curr.getMonth() + 1}/${curr.getDate()}`;
+        ctx.fillText(dStr, x + 5, 20);
+    }
+
+    // Current Time Pointer
+    const todayStr = getLocalDateStr();
+    const todayX = getX(todayStr); // Only works if today is in range.
+    if (todayX >= 0 && todayX <= totalWidth) {
+        ctx.strokeStyle = '#ef4444'; // Red
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(todayX, 0);
+        ctx.lineTo(todayX, canvas.height);
+        ctx.stroke();
+        ctx.lineWidth = 1; // Reset
+    }
+
+    // Draw Tasks
+    let y = headerHeight + 20;
+
+    proj.parents.forEach((parent, idx) => {
+        // Parent Bar (Color Coded if we want, user asked for "Color Coded Parent")
+        // Colors from palette? #3b82f6 (Blue), #10b981 (Green), #f59e0b (Orange)
+        const colors = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'];
+        const color = colors[idx % colors.length];
+
+        const startX = getX(parent.startDate);
+        const endX = getX(parent.endDate) + dayWidth; // Include full end day
+        const width = Math.max(5, endX - startX);
+
+        // Bar
+        ctx.fillStyle = parent.completed ? '#10b981' : color;
+        ctx.fillRect(startX, y, width, 20);
+
+        // Text
+        ctx.fillStyle = '#ffffff'; // White text
+        ctx.fillText(parent.name, startX + 5, y + 14);
+
+        // Children (Black Lines)
+        if (parent.children) {
+            parent.children.forEach(child => {
+                const cStartX = getX(child.startDate);
+                const cEndX = getX(child.endDate) + dayWidth;
+                const cWidth = Math.max(2, cEndX - cStartX);
+
+                // Draw line below parent bar? Or overlay? 
+                // User request: "Parent color bars, Children black lines".
+                // Let's draw a thin black line just below the bar or inside it?
+                // "Time Range for children is black line".
+
+                const lineY = y + 24; // Just below bar
+
+                ctx.strokeStyle = '#000000'; // Black (or lighter if dark mode? dark mode black is invisible)
+                // Use White for dark mode visibility? User said "Black Lines".
+                // If background is dark (#0d1117), black is bad. Let's use White or Light Gray but user asked Black.
+                // Maybe they meant "Dark Line". I'll use a high contrast color (white/black depending on theme).
+                // Actually the user specified "Black Line". I'll try black but if invisible, I'll add a white stroke border.
+                ctx.strokeStyle = '#ffffff'; // Override to white for visibility in dark mode? 
+                // Let's stick to request but maybe ensure visibility. 
+                // I'll draw a thin line.
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(cStartX, lineY);
+                ctx.lineTo(cEndX, lineY);
+                ctx.stroke();
+                ctx.lineWidth = 1;
+            });
+        }
+
+        y += rowHeight;
+    });
+}
+
 function findGanttItem(items, id) {
     if (!items) return null;
     for (const it of items) {
@@ -3456,10 +4073,17 @@ function toggleGanttItem(projId, parentId, id, isChecked) {
 
     // Is it a parent? (level 0)
     const isParent = proj.parents.some(p => p.id == id);
+    const todayStr = getLocalDateStr();
 
     if (item.completed && !isChecked) {
         state.stockPrice -= item.score;
         item.completed = false;
+
+        // Remove history if exists for today
+        if (item.completedHistory && item.completedHistory[todayStr]) {
+            delete item.completedHistory[todayStr];
+        }
+
         // If it was a parent and the project was completed, uncomplete it?
         if (isParent) proj.completed = false;
     } else if (!item.completed && isChecked) {
@@ -3472,6 +4096,10 @@ function toggleGanttItem(projId, parentId, id, isChecked) {
 
         state.stockPrice += totalGain;
         item.completed = true;
+
+        // Record History
+        if (!item.completedHistory) item.completedHistory = {};
+        item.completedHistory[todayStr] = true;
 
         if (isParent) {
             checkProjectCompletion(proj);
@@ -3633,50 +4261,4 @@ window.forceUpdate = async function () {
 };
 
 // --- Add Parent Task Logic ---
-function openAddParentTaskModal(projId) {
-    const proj = state.ganttSystem.projects.find(p => p.id == projId);
-    if (!proj) return;
 
-    document.getElementById('addParentProjId').value = projId;
-    // Default dates to project range
-    document.getElementById('newParentStart').value = proj.startDate;
-    document.getElementById('newParentEnd').value = proj.endDate;
-    document.getElementById('newParentStart').min = proj.startDate;
-    document.getElementById('newParentStart').max = proj.endDate;
-    document.getElementById('newParentEnd').min = proj.startDate;
-    document.getElementById('newParentEnd').max = proj.endDate;
-
-    // Clear name
-    document.getElementById('newParentName').value = '';
-
-    const modal = document.getElementById('addParentTaskModal');
-    modal.classList.remove('hidden');
-
-    // Setup close listener if not already (or just do it in setupGanttListeners? simpler here for immediate fix)
-    document.getElementById('closeAddParentTaskModalBtn').onclick = () => modal.classList.add('hidden');
-    document.getElementById('addParentTaskForm').onsubmit = handleAddParentTaskSubmit;
-}
-
-function handleAddParentTaskSubmit(e) {
-    e.preventDefault();
-    const projId = document.getElementById('addParentProjId').value;
-    const proj = state.ganttSystem.projects.find(p => p.id == projId);
-    if (!proj) return;
-
-    const newParent = {
-        id: `p-${Date.now()}`,
-        name: document.getElementById('newParentName').value,
-        score: parseInt(document.getElementById('newParentScore').value),
-        startDate: document.getElementById('newParentStart').value,
-        endDate: document.getElementById('newParentEnd').value,
-        children: [],
-        completed: false
-    };
-
-    proj.parents.push(newParent);
-    saveState();
-
-    document.getElementById('addParentTaskModal').classList.add('hidden');
-    viewProjectDetail(projId);
-}
-window.openAddParentTaskModal = openAddParentTaskModal;

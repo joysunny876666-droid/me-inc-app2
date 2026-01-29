@@ -35,7 +35,7 @@
             <header class="header">
                 <div class="logo">Me Inc. <span
                         style="font-size: 0.8rem; opacity: 0.7; color: var(--text-secondary); cursor: pointer;"
-                        onclick="forceUpdate()">v5.96 (點我更新)</span></div>
+                        onclick="forceUpdate()">v6.03 (點我更新)</span></div>
                 <div class="current-price-container">
                     <span class="price-label">當前股價</span>
                     <h1 id="currentPrice" class="price-value">100.00</h1>
@@ -49,7 +49,8 @@
                         style="padding: 8px 16px; font-size: 0.9rem; margin-right: 4px;">甘特圖</button>
                     <button id="navAccountingBtn" class="btn-secondary"
                         style="padding: 8px 16px; font-size: 0.9rem;">記帳</button>
-                    <input type="date" id="searchDateInput" style="padding: 8px; width: auto;">
+                    <input type="text" id="searchDateInput" placeholder="日期 (YYYY-MM-DD) 或關鍵字"
+                        style="padding: 8px; width: auto; min-width: 200px;">
                     <button id="searchBtn" class="btn-primary" style="padding: 8px 16px; font-size: 0.9rem;">搜尋</button>
                 </div>
             </header>
@@ -848,50 +849,95 @@
                         style="margin-top: 10px; display: flex; flex-direction: column; gap: 10px;">
                         <!-- 新增的父任務會出現在這裡 -->
                     </div>
-                    <button type="button" id="editProjAddParentBtn" class="btn-add-small"
-                        style="align-self: flex-start; margin-top: 5px;">+ 新增父任務</button>
+
+                    <div style="margin-top: 10px;">
+                        <button type="button" id="editProjAddParentBtn" class="btn-secondary" style="width: 100%;">+
+                            新增父任務</button>
+                    </div>
+
                     <div class="form-actions-page">
-                        <button type="submit" class="btn-confirm">儲存企劃變更</button>
+                        <button type="submit" class="btn-confirm">儲存變更</button>
                         <button type="button" id="deleteGanttProjectBtn" class="btn-cancel"
-                            style="background: rgba(239, 68, 68, 0.1); color: var(--accent-red); border-color: var(--accent-red);">刪除整個企劃</button>
+                            style="background: rgba(239, 68, 68, 0.1); color: var(--accent-red); border-color: var(--accent-red);">刪除企劃</button>
                     </div>
                 </form>
             </div>
         </div>
+    </div>
 
-        <!-- 7. Add Parent Task Modal -->
-        <div id="addParentTaskModal" class="modal hidden">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>新增父任務</h3>
-                    <button id="closeAddParentTaskModalBtn" class="close-btn">&times;</button>
+    <!-- 7. Add Parent Task Modal (Dedicated for Detail View) -->
+    <div id="addParentTaskModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>新增父項目</h3>
+                <button id="closeAddParentModalBtn" class="close-btn">&times;</button>
+            </div>
+            <form id="addParentTaskForm" class="form-content"
+                style="padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+                <input type="hidden" id="addParentProjId">
+                <div class="form-group">
+                    <label for="addParentName">名稱</label>
+                    <input type="text" id="addParentName" required>
                 </div>
-                <form id="addParentTaskForm" class="form-content"
-                    style="padding: 16px; display: flex; flex-direction: column; gap: 12px;">
-                    <input type="hidden" id="addParentProjId">
-                    <div class="form-group">
-                        <label for="newParentName">父任務名稱</label>
-                        <input type="text" id="newParentName" required>
+                <div class="form-group">
+                    <label for="addParentScore">完成得分</label>
+                    <input type="number" id="addParentScore" required value="50">
+                </div>
+                <div class="form-group">
+                    <label>時間範圍</label>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="date" id="addParentStart" required>
+                        <input type="date" id="addParentEnd" required>
                     </div>
-                    <div class="form-group">
-                        <label for="newParentScore">完成得分</label>
-                        <input type="number" id="newParentScore" required value="50">
-                    </div>
-                    <div class="form-group">
-                        <label>時間範圍</label>
-                        <div style="display: flex; gap: 8px;">
-                            <input type="date" id="newParentStart" required>
-                            <input type="date" id="newParentEnd" required>
-                        </div>
-                    </div>
-                    <div class="form-actions-page">
-                        <button type="submit" class="btn-confirm">確認新增</button>
-                    </div>
-                </form>
-            </div>
+                </div>
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="addParentInsertTop" style="width: auto;">
+                        <span>插入至最上方 (Insert at Beginning)</span>
+                    </label>
+                </div>
+                <div class="form-actions-page">
+                    <button type="submit" class="btn-confirm">確認新增</button>
+                </div>
+            </form>
         </div>
+    </div>
 
-        <script src="app.js?v=5.2"></script>
+
+
+    <!-- 7. Add Parent Task Modal -->
+    <div id="addParentTaskModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>新增父任務</h3>
+                <button id="closeAddParentTaskModalBtn" class="close-btn">&times;</button>
+            </div>
+            <form id="addParentTaskForm" class="form-content"
+                style="padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+                <input type="hidden" id="addParentProjId">
+                <div class="form-group">
+                    <label for="newParentName">父任務名稱</label>
+                    <input type="text" id="newParentName" required>
+                </div>
+                <div class="form-group">
+                    <label for="newParentScore">完成得分</label>
+                    <input type="number" id="newParentScore" required value="50">
+                </div>
+                <div class="form-group">
+                    <label>時間範圍</label>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="date" id="newParentStart" required>
+                        <input type="date" id="newParentEnd" required>
+                    </div>
+                </div>
+                <div class="form-actions-page">
+                    <button type="submit" class="btn-confirm">確認新增</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="app.js?v=5.2"></script>
 </body>
 
 </html>
