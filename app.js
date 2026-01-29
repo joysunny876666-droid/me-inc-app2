@@ -673,12 +673,23 @@ function setupEventListeners() {
 
     if (els.addForm.inputs.cancelBtn) {
         els.addForm.inputs.cancelBtn.onclick = () => {
-            els.addForm.form.reset();
-            els.addForm.inputs.recurrenceGroup.classList.add('hidden');
-            els.addForm.inputs.dateGroup.classList.remove('hidden');
-            // Reset Time Range UI
-            els.addForm.inputs.endTimeGroup.classList.add('hidden');
+            renderView('start');
         };
+    }
+
+    // Edit Form Recurrence Toggle
+    const editRecurrenceCheckbox = document.getElementById('editIsRecurring');
+    const editRecurrenceOptions = document.getElementById('editRecurringOptions');
+
+    // Edit Form Recurrence Toggle
+    if (editRecurrenceCheckbox && editRecurrenceOptions) {
+        editRecurrenceCheckbox.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                editRecurrenceOptions.classList.remove('hidden');
+            } else {
+                editRecurrenceOptions.classList.add('hidden');
+            }
+        });
     }
 
     // Time Range Toggle
@@ -3134,12 +3145,45 @@ function openEditModal(task, dateStr) {
     els.editModal.name.value = task.name;
     els.editModal.time.value = task.time || '';
     if (els.editModal.endTime) els.editModal.endTime.value = task.endTime || '';
-    if (els.editModal.score) els.editModal.score.value = task.score; // New Score Field
+    if (els.editModal.score) els.editModal.score.value = task.score;
     if (document.getElementById('editImportance')) document.getElementById('editImportance').value = task.importance || 'medium';
     if (els.editModal.isMission) els.editModal.isMission.checked = task.isMission || false;
+    if (els.editModal.isPersistent) els.editModal.isPersistent.checked = task.isPersistent || false;
+    if (els.editModal.isBadHabit) els.editModal.isBadHabit.checked = task.isBadHabit || false;
+
+    // Recurrence Field Population
+    const isRecCheck = document.getElementById('editIsRecurring');
+    const recOptions = document.getElementById('editRecurringOptions');
+    if (isRecCheck) {
+        const isRecurring = task.type === 'recurring';
+        isRecCheck.checked = isRecurring;
+        if (recOptions) {
+            if (isRecurring) {
+                recOptions.classList.remove('hidden');
+                if (task.recurrence) {
+                    if (document.getElementById('editRecurrenceInterval')) document.getElementById('editRecurrenceInterval').value = task.recurrence.interval || 1;
+                    if (document.getElementById('editRecurrenceType')) document.getElementById('editRecurrenceType').value = task.recurrence.type || 'daily';
+
+                    // Show/Hide Weekdays based on type
+                    const weekDaysGroup = document.getElementById('editRecurrenceWeekDays');
+                    if (task.recurrence.type === 'weekly') {
+                        weekDaysGroup.classList.remove('hidden');
+                        const days = task.recurrence.daysOfWeek || [];
+                        const dayChecks = document.getElementsByName('editRecurrenceDay');
+                        dayChecks.forEach(cb => {
+                            cb.checked = days.includes(parseInt(cb.value));
+                        });
+                    } else {
+                        if (weekDaysGroup) weekDaysGroup.classList.add('hidden');
+                    }
+                }
+            } else {
+                recOptions.classList.add('hidden');
+            }
+        }
+    }
 
     els.editModal.el.classList.remove('hidden');
-
     if (els.modal.el) els.modal.el.classList.add('hidden');
 }
 
@@ -3147,10 +3191,26 @@ function setupEditListeners() {
     if (els.editModal.closeBtn) els.editModal.closeBtn.onclick = () => els.editModal.el.classList.add('hidden');
     if (els.editModal.cancelBtn) els.editModal.cancelBtn.onclick = () => els.editModal.el.classList.add('hidden');
 
+    // Toggle for Recurrence Options in Edit
+    const editRecCheckbox = document.getElementById('editIsRecurring');
+    if (editRecCheckbox) {
+        editRecCheckbox.onchange = (e) => {
+            const opt = document.getElementById('editRecurringOptions');
+            if (opt) opt.classList.toggle('hidden', !e.target.checked);
+        };
+    }
+    const editRecType = document.getElementById('editRecurrenceType');
+    if (editRecType) {
+        editRecType.onchange = (e) => {
+            const daysGroup = document.getElementById('editRecurrenceWeekDays');
+            if (daysGroup) daysGroup.classList.toggle('hidden', e.target.value !== 'weekly');
+        };
+    }
+
     if (els.editModal.form) {
         els.editModal.form.onsubmit = (e) => {
             e.preventDefault();
-            const taskId = els.editModal.taskId.value; // Store as string first (Gantt IDs might be string or number)
+            const taskId = els.editModal.taskId.value;
             const originalDate = els.editModal.originalDate.value;
             const newDate = els.editModal.taskDate.value;
             const newName = els.editModal.name.value;
@@ -3160,90 +3220,74 @@ function setupEditListeners() {
             const newImportance = document.getElementById('editImportance') ? document.getElementById('editImportance').value : 'medium';
             const newIsMission = els.editModal.isMission ? els.editModal.isMission.checked : false;
             const newIsPersistent = els.editModal.isPersistent ? els.editModal.isPersistent.checked : false;
+            const newIsBadHabit = els.editModal.isBadHabit ? els.editModal.isBadHabit.checked : false;
 
             if (newEndTime && newTime && newEndTime <= newTime) return alert('結束時間必須晚於開始時間');
             if (!newName) return alert('請輸入名稱');
             if (!newDate) return alert('請輸入日期');
             if (isNaN(newScore)) return alert('請輸入分數');
 
-            // Find Task (Check Regular then Gantt)
+            // Find Task
             let task = state.tasks.find(t => t.id == taskId);
-            let isGantt = false;
 
-            if (!task) {
-                // Try finding in Gantt
-                if (state.ganttSystem && state.ganttSystem.projects) {
-                    for (const proj of state.ganttSystem.projects) {
-                        for (const parent of proj.parents) {
-                            const child = parent.children.find(c => c.id == taskId);
-                            if (child) {
-                                task = child;
-                                isGantt = true;
-                                break;
-                            }
-                        }
-                        if (task) break;
-                    }
-                }
-            }
+            // Check for Recurrence logic
+            const isRecSet = document.getElementById('editIsRecurring').checked;
 
-            if (!task) return;
-
-            // Handle Save
-            if (isGantt) {
-                // If it's a Gantt task, update properties directly
+            if (task) {
+                // Update core properties
                 task.name = newName;
                 task.score = newScore;
+                task.importance = newImportance;
+                task.isMission = newIsMission;
+                task.isPersistent = newIsPersistent;
+                task.isBadHabit = newIsBadHabit;
+                task.time = newTime;
+                task.endTime = newEndTime;
 
-                // If Date/Time is provided, we treat it as "Scheduling" this Gantt task
-                // Which effectively creates a linked scheduled task (as per completeMove logic)
-                // But users might expect the Gantt task itself to change. 
-                // Creating a scheduled copy is safer for now to preserve Gantt structure.
-                if (newTime) {
-                    const newTask = {
-                        id: Date.now(),
-                        name: newName, // Use edit name (might remove [Project] prefix if user wants)
-                        type: 'scheduled',
-                        date: newDate,
-                        time: newTime,
-                        score: newScore,
-                        importance: newImportance,
-                        isMission: newIsMission,
-                        isPersistent: newIsPersistent,
-                        createdAt: new Date().toISOString()
-                    };
-                    if (newEndTime) newTask.endTime = newEndTime;
-                    state.tasks.push(newTask);
-
-                    // Mark Gantt child as completed? Or just leave it?
-                    // User request: "Edit (Name, Score, Date, Time Range)"
-                    // If they set a date/time, it should appear on schedule.
+                if (isRecSet) {
+                    task.type = 'recurring';
+                    const interval = parseInt(document.getElementById('editRecurrenceInterval').value) || 1;
+                    const type = document.getElementById('editRecurrenceType').value;
+                    const rec = { type, interval, startDate: newDate };
+                    if (type === 'weekly') {
+                        const days = Array.from(document.getElementsByName('editRecurrenceDay')).filter(c => c.checked).map(c => parseInt(c.value));
+                        rec.daysOfWeek = days;
+                    }
+                    task.recurrence = rec;
+                } else {
+                    if (task.type === 'recurring') {
+                        task.type = 'scheduled';
+                        delete task.recurrence;
+                    }
+                    task.date = newDate;
                 }
-                // If no time set, we just updated the Gantt child's properties above.
 
-                finishEdit();
-                // Special refresh for Gantt
-                renderWeeklySchedule();
-            } else {
-                // Regular Task
-                editPendingData = { name: newName, time: newTime, endTime: newEndTime, newDate: newDate, score: newScore, importance: newImportance, isMission: newIsMission, isPersistent: newIsPersistent };
+                editPendingData = { name: newName, time: newTime, endTime: newEndTime, newDate: newDate, score: newScore, importance: newImportance, isMission: newIsMission, isPersistent: newIsPersistent, isBadHabit: newIsBadHabit };
                 taskToEdit = task;
                 editOriginalDateVal = originalDate;
 
                 if (task.type === 'recurring') {
-                    // Ask Scope
                     els.editScopeModal.el.classList.remove('hidden');
                 } else {
-                    // Direct Save (Scheduled)
-                    task.name = newName;
-                    task.time = newTime;
-                    task.endTime = newEndTime;
-                    task.date = newDate;
-                    task.score = newScore;
-                    task.importance = newImportance;
-                    task.isMission = newIsMission;
-                    task.isPersistent = newIsPersistent;
                     finishEdit();
+                }
+            } else {
+                // Try Gantt... (Existing logic preserved below or merged)
+                // Actually I should find it first to decide logic
+                if (state.ganttSystem && state.ganttSystem.projects) {
+                    for (const proj of state.ganttSystem.projects) {
+                        for (const parent of proj.parents) {
+                            const child = findGanttItem(parent.children, taskId);
+                            if (child) {
+                                child.name = newName;
+                                child.score = newScore;
+                                // Gantt items don't strictly support recurrence in this app yet
+                                finishEdit();
+                                renderWeeklySchedule();
+                                return;
+                            }
+                        }
+                    }
                 }
             }
         };
