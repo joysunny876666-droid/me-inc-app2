@@ -280,7 +280,22 @@ const els = {
 function init() {
     console.log("Initializing App...");
     try {
-        // 1. Validate State immediately to prevent startup crashes from bad data
+        // 1. Load from localStorage FIRST (Immediate recovery)
+        const localData = localStorage.getItem('me-inc-state');
+        if (localData) {
+            try {
+                const parsed = JSON.parse(localData);
+                state = { ...defaultState, ...parsed };
+                console.log("State loaded from localStorage.");
+            } catch (e) {
+                console.error("Local Storage Parse Error:", e);
+                state = defaultState;
+            }
+        } else {
+            state = defaultState;
+        }
+
+        // 2. Validate State immediately to prevent startup crashes from bad data
         validateAndRepairState();
 
         setupEventListeners();
@@ -318,6 +333,9 @@ function init() {
 
         // Start Cloud Sync
         setupCloudSync();
+
+        // Render immediate view with local data
+        renderView(currentView || 'start');
     } catch (error) {
         console.error("Initialization Error:", error);
         alert("應用程式啟動失敗，請重新整理頁面。錯誤：" + error.message);
@@ -368,26 +386,49 @@ function setupCloudSync() {
                     const cloudData = doc.data();
 
                     // --- NEW: Sync Conflict Resolution ---
-                    // If local data is newer, don't overwrite with older cloud data
-                    if (cloudData.updatedAt && state.updatedAt && cloudData.updatedAt < state.updatedAt) {
-                        console.log("Cloud data is older than local, ignoring cloud update");
-                        isCloudSyncStarted = true;
-                        return;
+                    // If local data is significantly newer (or cloud is missing key fields), be careful
+                    const localUpdated = state.updatedAt || 0;
+                    const cloudUpdated = cloudData.updatedAt || 0;
+
+                    // --- CRITICAL SAFETY CHECK ---
+                    // Only push local update if we have actual data, or if we've already confirmed cloud is empty.
+                    // If local is empty and cloud has data, WE MUST PREFER CLOUD even if timestamp is older (recovery mode)
+                    const localHasData = (state.tasks && state.tasks.length > 0) || (state.ganttSystem && state.ganttSystem.projects && state.ganttSystem.projects.length > 0);
+                    const cloudHasData = (cloudData.tasks && cloudData.tasks.length > 0) || (cloudData.ganttSystem && cloudData.ganttSystem.projects && cloudData.ganttSystem.projects.length > 0);
+
+                    if (cloudUpdated < localUpdated && !isInitialSyncDone) {
+                        if (!localHasData && cloudHasData) {
+                            console.warn("Local is empty but Cloud has data. Preferring Cloud to avoid data loss.");
+                            // Continue to merge cloud into local
+                        } else {
+                            console.log("Cloud data is older than local, pushing local update to cloud.");
+                            isCloudSyncStarted = true;
+                            isInitialSyncDone = true;
+                            saveState("InitialSync_LocalNewer");
+                            return;
+                        }
                     }
 
-                    // Merge with default to ensure structure
-                    // Deep merge is better, but simple spread + validation works for now
+                    // Deep merge or specific field merge is safer than spread
+                    // For now, update global state but keep non-serializable UI state
                     state = { ...defaultState, ...cloudData };
 
                     // Validate integrity after merge
                     validateAndRepairState();
 
+                    // Save to local storage as catch-up
+                    localStorage.setItem('me-inc-state', JSON.stringify(state));
+
                     isCloudSyncStarted = true;
+                    if (!isInitialSyncDone) {
+                        isInitialSyncDone = true;
+                        console.log("Initial Cloud Sync Done.");
+                    }
                 } else {
-                    console.log("No cloud data, creating initial...");
-                    // New user or cleared DB, permit sync and save default
+                    console.log("No cloud data, permitted to sync and save default.");
                     isCloudSyncStarted = true;
-                    saveState();
+                    isInitialSyncDone = true;
+                    saveState("CloudDataEmpty");
                 }
 
                 // After data updates, check logic and render
@@ -401,37 +442,87 @@ function setupCloudSync() {
                 runAutomaticCleanup();
 
                 renderView(currentView || 'start');
+                updateSyncIndicator("Synced");
+                updateDebugInfo(); // Update diagnostic info on sync
+
+                // Check and perform daily backup after initial sync
+                if (isInitialSyncDone) {
+                    checkAndPerformDailyBackup().catch(err => {
+                        console.error('Daily backup check failed:', err);
+                    });
+                }
             } catch (innerErr) {
                 console.error("Error processing cloud data:", innerErr);
-                alert("同步資料處理失敗，已切換至離線模式。");
+                updateSyncIndicator("Error");
             }
         }, (error) => {
             console.error("Sync error:", error);
-            // alert("連線資料庫失敗，請檢查網路或是 API 金鑰。目前使用離線模式。");
-            // Silently fail to offline mode to avoid annoying alerts
+            updateSyncIndicator("Offline");
         });
     } catch (e) {
         console.warn("Cloud Sync Setup Failed (Offline Mode):", e);
+        updateSyncIndicator("Offline");
+    }
+}
+
+let isInitialSyncDone = false;
+function updateSyncIndicator(status) {
+    const el = document.getElementById('syncStatusIndicator');
+    if (!el) return;
+    el.classList.remove('sync-synced', 'sync-error', 'sync-offline', 'sync-loading');
+
+    switch (status) {
+        case 'Synced':
+            el.textContent = '● 已同步層 (雲端)';
+            el.className = 'sync-indicator sync-synced';
+            break;
+        case 'Offline':
+            el.textContent = '○ 離線模式';
+            el.className = 'sync-indicator sync-offline';
+            break;
+        case 'Error':
+            el.textContent = '⚠ 同步異常';
+            el.className = 'sync-indicator sync-error';
+            break;
+        case 'Loading':
+            el.textContent = '◌ 同步中...';
+            el.className = 'sync-indicator sync-loading';
+            break;
+    }
+
+    // Also update data view sync status if available
+    if (typeof updateDataSyncStatus === 'function') {
+        updateDataSyncStatus(status);
     }
 }
 
 function saveState(reason = "Unknown") {
+    // Save to LocalStorage immediately (Safety First)
+    state.updatedAt = Date.now();
+    try {
+        localStorage.setItem('me-inc-state', JSON.stringify(state));
+        console.log(`State cached to LocalStorage (${reason})`);
+    } catch (e) {
+        console.error("LocalStorage Save Failed:", e);
+    }
+
     if (!isCloudSyncStarted) {
-        console.warn(`Save blocked (${reason}): Cloud sync not yet started.`);
+        console.warn(`Cloud Save blocked (${reason}): Sync not yet started.`);
         return;
     }
 
-    // Update timestamp
-    state.updatedAt = Date.now();
-
-    console.log(`Saving state due to: ${reason}`);
+    console.log(`Saving state to cloud due to: ${reason}`);
 
     // Save to Firestore
     db.collection('data').doc('state').set(state)
-        .then(() => console.log(`State saved to Cloud (${reason}) ` + new Date(state.updatedAt).toLocaleTimeString()))
+        .then(() => {
+            console.log(`State saved to Cloud (${reason}) ` + new Date(state.updatedAt).toLocaleTimeString());
+            updateSyncIndicator("Synced");
+        })
         .catch((e) => {
-            console.error("Save failed", e);
-            alert("儲存失敗！請檢查 Firebase 權限設定。\n錯誤: " + e.message);
+            console.error("Cloud Save failed", e);
+            updateSyncIndicator("Error");
+            // Don't alert on mobile to avoid blocking UI, console is enough
         });
 }
 
@@ -499,6 +590,80 @@ function setupEventListeners() {
     };
     if (els.data.resetBtn) els.data.resetBtn.onclick = resetStockPrice;
     if (els.nav.accountingBtn) els.nav.accountingBtn.onclick = () => renderView('accounting');
+
+    // Edit Modal Form Submit Handler
+    if (els.editModal && els.editModal.form) {
+        els.editModal.form.onsubmit = function (e) {
+            e.preventDefault();
+
+            const taskId = parseInt(els.editModal.taskId.value);
+            const taskDate = els.editModal.taskDate.value;
+            const newName = els.editModal.name.value.trim();
+            const newTime = els.editModal.time.value;
+            const newEndTime = els.editModal.endTime.value;
+            const newScore = parseInt(els.editModal.score.value) || 0;
+
+            // Find the task object
+            const task = state.tasks.find(t => t.id === taskId);
+
+            if (!task) {
+                alert('任務未找到');
+                els.editModal.el.classList.add('hidden');
+                return;
+            }
+
+            // Handle recurring tasks with exceptions
+            if (task.type === 'recurring') {
+                if (!task.exceptions) task.exceptions = {};
+                task.exceptions[taskDate] = {
+                    name: newName,
+                    time: newTime,
+                    endTime: newEndTime,
+                    score: newScore
+                };
+            } else {
+                // Update regular scheduled task
+                task.name = newName;
+                task.time = newTime;
+                task.endTime = newEndTime;
+                task.score = newScore;
+
+                // Handle date change if applicable
+                if (task.date && task.date !== taskDate) {
+                    task.date = taskDate;
+                }
+            }
+
+            // Save state to cloud
+            saveState('EditTask');
+
+            // Close modal
+            els.editModal.el.classList.add('hidden');
+
+            // Refresh current view
+            if (currentView === 'start') {
+                renderStartPage();
+            } else if (currentView === 'focusedGantt') {
+                renderWeeklySchedule();
+            }
+        };
+
+        // Close button handler
+        if (els.editModal.closeBtn) {
+            els.editModal.closeBtn.onclick = () => {
+                els.editModal.el.classList.add('hidden');
+            };
+        }
+
+        // Cancel button handler
+        if (els.editModal.cancelBtn) {
+            els.editModal.cancelBtn.onclick = () => {
+                els.editModal.el.classList.add('hidden');
+            };
+        }
+    }
+
+    // Local Export/Import Buttons will be bound in DOMContentLoaded
 
     // Smart Search Logic
     if (els.dashboard.searchBtn) {
@@ -2167,7 +2332,11 @@ function renderStartPage() {
 
     if (els.dashboard.dailyList) {
         els.dashboard.dailyList.innerHTML = '';
-        dailyRoutineTasks.forEach(task => els.dashboard.dailyList.appendChild(createTaskEl(task, todayStr, false)));
+        if (dailyRoutineTasks.length === 0) {
+            els.dashboard.dailyList.innerHTML = '<div style="text-align:center; color:var(--text-secondary); padding:10px;">今日無例行項目</div>';
+        } else {
+            dailyRoutineTasks.forEach(task => els.dashboard.dailyList.appendChild(createTaskEl(task, todayStr, false)));
+        }
     }
 
     // 2. All Schedule (All Today)
@@ -2181,7 +2350,11 @@ function renderStartPage() {
 
     if (els.dashboard.allList) {
         els.dashboard.allList.innerHTML = '';
-        combinedTasks.forEach(task => els.dashboard.allList.appendChild(createTaskEl(task, todayStr, false)));
+        if (combinedTasks.length === 0) {
+            els.dashboard.allList.innerHTML = '<div style="text-align:center; color:var(--text-secondary); padding:10px;">今日無排程項目</div>';
+        } else {
+            combinedTasks.forEach(task => els.dashboard.allList.appendChild(createTaskEl(task, todayStr, false)));
+        }
     }
 
     // 3. Important (Critical Global)
@@ -2948,12 +3121,22 @@ function renderCalendar(date) {
         els.calendar.grid.appendChild(cell);
     }
 
+    const todayStr = getLocalDateStr();
+
     // Days
     for (let i = 1; i <= daysInMonth; i++) {
         const cell = document.createElement('div');
         cell.className = 'calendar-day';
 
         const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+
+        // Set data-date attribute
+        cell.dataset.date = dateStr;
+
+        // Check for today
+        if (dateStr === todayStr) {
+            cell.classList.add('today');
+        }
 
         cell.innerHTML = `<span class="day-number">${i}</span>`;
 
@@ -4277,8 +4460,17 @@ try {
     alert("程式初始化失敗，請連繫開發者。");
 }
 // --- System Updates ---
+// --- Debug & Diagnostics ---
+let versionClickCount = 0;
 window.forceUpdate = async function () {
+    versionClickCount++;
+    if (versionClickCount >= 5) {
+        document.getElementById('debugPanel').classList.remove('hidden');
+        updateDebugInfo();
+    }
+
     if (!confirm('是否強制清除快取並更新至最新版本？(將會重新整理頁面)')) return;
+    // ... rest of forceUpdate logic
 
     alert('正在清理系統快取...');
 
@@ -4304,5 +4496,563 @@ window.forceUpdate = async function () {
     }
 };
 
+window.updateDebugInfo = function () {
+    const statsEl = document.getElementById('debugStats');
+    const rawEl = document.getElementById('debugRaw');
+    if (!statsEl) return;
+
+    const taskCount = state.tasks ? state.tasks.length : 0;
+    const projectCount = (state.ganttSystem && state.ganttSystem.projects) ? state.ganttSystem.projects.length : 0;
+    const lastUpdate = state.updatedAt ? new Date(state.updatedAt).toLocaleString() : '無';
+
+    statsEl.innerHTML = `任務數: ${taskCount} | 企劃數: ${projectCount} | 最後更新: ${lastUpdate}`;
+    rawEl.textContent = JSON.stringify(state, null, 2);
+};
+
+window.copyRawData = function () {
+    const rawText = JSON.stringify(state);
+    navigator.clipboard.writeText(rawText).then(() => {
+        alert('原始資料已複製到剪貼簿。');
+    }).catch(err => {
+        console.error('複製失敗:', err);
+    });
+};
+
+window.toggleDebugRaw = function () {
+    const rawEl = document.getElementById('debugRaw');
+    if (rawEl) rawEl.classList.toggle('hidden');
+};
+
+window.scanForBackups = async function () {
+    const resultsEl = document.getElementById('scanResults');
+    if (!resultsEl) return;
+    resultsEl.classList.remove('hidden');
+    resultsEl.innerHTML = '正在全力掃描資料庫中所有可能的位置...';
+
+    const collections = ['data', 'tasks', 'users', 'state', 'accounting'];
+    let html = '<div style="margin-bottom:8px; font-weight:bold;">掃描結果：</div>';
+    let foundAny = false;
+
+    try {
+        for (const colName of collections) {
+            try {
+                const snapshot = await db.collection(colName).get();
+                if (!snapshot.empty) {
+                    foundAny = true;
+                    snapshot.forEach(doc => {
+                        const data = doc.data();
+                        const taskCount = (data.tasks || []).length;
+                        const projCount = (data.ganttSystem && data.ganttSystem.projects) ? data.ganttSystem.projects.length : 0;
+                        const updateTime = data.updatedAt ? new Date(data.updatedAt).toLocaleString() : '未知';
+
+                        html += `
+                            <div style="border-bottom:1px solid rgba(255,255,255,0.1); padding:4px 0;">
+                                集合: [${colName}] | ID: ${doc.id}<br>
+                                任務: ${taskCount} | 企劃: ${projCount}<br>
+                                最後更新: ${updateTime}
+                                <button onclick="restoreFromID('${colName}', '${doc.id}')" class="btn-confirm small" style="margin-top:4px; font-size:0.7rem; padding:2px 8px; background:var(--accent-green);">嘗試選用此備份</button>
+                            </div>
+                        `;
+                    });
+                }
+            } catch (e) { console.warn(`Scan failed for ${colName}:`, e); }
+        }
+
+        if (!foundAny) {
+            resultsEl.innerHTML = '資料庫中無任何可辨識的備份文件。';
+        } else {
+            resultsEl.innerHTML = html;
+        }
+    } catch (e) {
+        console.error("Scan Error:", e);
+        resultsEl.innerHTML = '掃描失敗: ' + e.message;
+    }
+};
+
+window.restoreFromID = async function (colName, docId) {
+    if (!confirm(`確定要嘗試從 [${colName}] 中的 [${docId}] 還原資料嗎？`)) return;
+
+    try {
+        const doc = await db.collection(colName).doc(docId).get();
+        if (doc.exists) {
+            state = { ...defaultState, ...doc.data() };
+            validateAndRepairState();
+            saveState("ManualRestoreFromID");
+            alert("資料已還原並存入雲端！頁面即將重新整理...");
+            window.location.reload();
+        } else {
+            alert("文件不存在。");
+        }
+    } catch (e) {
+        alert("讀取失敗: " + e.message);
+    }
+};
+
 // --- Add Parent Task Logic ---
+
+// --- Local Export/Import Functions ---
+window.exportLocalData = function () {
+    try {
+        // Create export object with core data
+        const exportData = {
+            metadata: {
+                exportDate: new Date().toISOString(),
+                appVersion: "6.09",
+                appName: "時間管理大師"
+            },
+            tasks: state.tasks || [],
+            ganttSystem: state.ganttSystem || { projects: [] },
+            accounting: state.accounting || { transactions: [], banks: [], categories: [] },
+            stockPrice: state.stockPrice || 100,
+            history: state.history || [],
+            lastLoginDate: state.lastLoginDate || ''
+        };
+
+        // Convert to JSON string
+        const jsonString = JSON.stringify(exportData, null, 2);
+
+        // Create blob and download link
+        const blob = new Blob([jsonString], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+
+        // Generate filename with date
+        const dateStr = getLocalDateStr().replace(/-/g, '');
+        link.download = `time-master-backup-${dateStr}.txt`;
+
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+
+        alert(`資料已成功導出！\n文件名：time-master-backup-${dateStr}.txt\n\n包含：\n- ${exportData.tasks.length} 個任務\n- ${exportData.ganttSystem.projects.length} 個專案\n- ${exportData.accounting.transactions.length} 筆記帳記錄`);
+    } catch (error) {
+        console.error('Export error:', error);
+        alert('導出失敗：' + error.message);
+    }
+};
+
+window.importLocalData = function () {
+    const fileInput = document.getElementById('importFileInput');
+    if (!fileInput) {
+        alert('文件輸入元素未找到');
+        return;
+    }
+
+    fileInput.click();
+};
+
+// Handle file selection for import
+document.addEventListener('DOMContentLoaded', () => {
+    // Bind export/import buttons
+    const exportBtn = document.getElementById('exportLocalDataBtn');
+    const importBtn = document.getElementById('importLocalDataBtn');
+    if (exportBtn) {
+        exportBtn.onclick = window.exportLocalData;
+        console.log('Export button bound');
+    }
+    if (importBtn) {
+        importBtn.onclick = window.importLocalData;
+        console.log('Import button bound');
+    }
+
+    // Bind file input
+    const fileInput = document.getElementById('importFileInput');
+    if (fileInput) {
+        fileInput.onchange = function (e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function (event) {
+                try {
+                    const content = event.target.result;
+                    const importedData = JSON.parse(content);
+
+                    // Validate required fields
+                    if (!importedData.tasks && !importedData.ganttSystem && !importedData.accounting) {
+                        throw new Error('無效的備份文件：缺少必要欄位');
+                    }
+
+                    // Show summary
+                    const taskCount = (importedData.tasks || []).length;
+                    const projectCount = ((importedData.ganttSystem || {}).projects || []).length;
+                    const transactionCount = ((importedData.accounting || {}).transactions || []).length;
+
+                    const confirmMsg = `確定要載入此備份嗎？\n\n備份資訊：\n- 任務：${taskCount} 個\n- 專案：${projectCount} 個\n- 記帳記錄：${transactionCount} 筆\n\n警告：這將完全覆蓋當前所有數據！`;
+
+                    if (!confirm(confirmMsg)) {
+                        fileInput.value = ''; // Reset file input
+                        return;
+                    }
+
+                    // Restore data
+                    state.tasks = importedData.tasks || [];
+                    state.ganttSystem = importedData.ganttSystem || { projects: [] };
+                    state.accounting = importedData.accounting || { transactions: [], banks: [], categories: [] };
+                    state.stockPrice = importedData.stockPrice || 100;
+                    state.history = importedData.history || [];
+                    state.lastLoginDate = importedData.lastLoginDate || '';
+
+                    // Validate and repair
+                    validateAndRepairState();
+
+                    // Save to cloud
+                    saveState('LocalImport');
+
+                    alert('資料載入成功！即將重新整理頁面...');
+                    setTimeout(() => window.location.reload(), 500);
+
+                } catch (error) {
+                    console.error('Import error:', error);
+                    alert('載入失敗：' + error.message);
+                }
+
+                // Reset file input
+                fileInput.value = '';
+            };
+
+            reader.onerror = function () {
+                alert('文件讀取失敗');
+                fileInput.value = '';
+            };
+
+            reader.readAsText(file);
+        };
+    }
+});
+
+// Update sync status display in data view
+window.updateDataSyncStatus = function (status) {
+    const el = document.getElementById('dataSyncStatus');
+    if (!el) return;
+
+    switch (status) {
+        case 'Synced':
+            el.textContent = '● 已同步 (雲端)';
+            el.style.color = 'var(--accent-green)';
+            break;
+        case 'Offline':
+            el.textContent = '○ 離線模式';
+            el.style.color = 'var(--text-secondary)';
+            break;
+        case 'Error':
+            el.textContent = '⚠ 同步異常';
+            el.style.color = 'var(--accent-red)';
+            break;
+        case 'Loading':
+            el.textContent = '◌ 同步中...';
+            el.style.color = 'var(--accent-blue)';
+            break;
+    }
+};
+
+// Update diagnostic stats in data view
+window.updateDataDiagnosticStats = function () {
+    const statsEl = document.getElementById('dataDiagnosticStats');
+    const rawEl = document.getElementById('dataDebugRaw');
+    if (!statsEl) return;
+
+    const taskCount = state.tasks ? state.tasks.length : 0;
+    const projectCount = (state.ganttSystem && state.ganttSystem.projects) ? state.ganttSystem.projects.length : 0;
+    const lastUpdate = state.updatedAt ? new Date(state.updatedAt).toLocaleString() : '無';
+
+    statsEl.innerHTML = `任務數: ${taskCount} | 企劃數: ${projectCount} | 最後更新: ${lastUpdate}`;
+    if (rawEl) {
+        rawEl.textContent = JSON.stringify(state, null, 2);
+    }
+};
+
+// ============================================
+// Cloud Backup System
+// ============================================
+
+// Helper: Get date string with offset
+function getDateStrOffset(days) {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    return getLocalDateStr(d);
+}
+
+// Check and perform daily backup
+async function checkAndPerformDailyBackup() {
+    try {
+        const today = getLocalDateStr();
+        const lastBackupDate = localStorage.getItem('lastBackupDate');
+
+        console.log(`Checking daily backup: today=${today}, lastBackup=${lastBackupDate}`);
+
+        if (lastBackupDate !== today) {
+            console.log('Performing daily backup...');
+            await performDailyBackup();
+            localStorage.setItem('lastBackupDate', today);
+            console.log('Daily backup completed');
+        }
+    } catch (error) {
+        console.error('Daily backup check failed:', error);
+    }
+}
+
+// Perform daily backup
+async function performDailyBackup() {
+    if (!db) {
+        console.warn('Firestore not available, skipping backup');
+        return;
+    }
+
+    try {
+        const yesterday = getDateStrOffset(-1);
+        const backupId = `backup-${yesterday}`;
+
+        const backupData = {
+            backupDate: yesterday,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            data: {
+                tasks: state.tasks || [],
+                ganttSystem: state.ganttSystem || { projects: [] },
+                accounting: state.accounting || { transactions: [], banks: [], categories: [] },
+                stockPrice: state.stockPrice || 100,
+                history: state.history || [],
+                lastLoginDate: state.lastLoginDate || ''
+            }
+        };
+
+        await db.collection('dailyBackups').doc(backupId).set(backupData);
+        console.log(`Daily backup created: ${backupId}`);
+
+        // Cleanup old backups
+        await cleanupOldBackups();
+    } catch (error) {
+        console.error('Failed to perform daily backup:', error);
+        throw error;
+    }
+}
+
+// Cleanup old backups (keep only last 2 days)
+async function cleanupOldBackups() {
+    if (!db) return;
+
+    try {
+        const twoDaysAgo = getDateStrOffset(-2);
+        const snapshot = await db.collection('dailyBackups')
+            .where('backupDate', '<', twoDaysAgo)
+            .get();
+
+        if (snapshot.empty) {
+            console.log('No old backups to clean up');
+            return;
+        }
+
+        const batch = db.batch();
+        snapshot.docs.forEach(doc => {
+            console.log(`Deleting old backup: ${doc.id}`);
+            batch.delete(doc.ref);
+        });
+        await batch.commit();
+        console.log(`Cleaned up ${snapshot.size} old backups`);
+    } catch (error) {
+        console.error('Failed to cleanup old backups:', error);
+    }
+}
+
+// Manual cloud backup
+window.createManualCloudBackup = async function () {
+    if (!db) {
+        alert('雲端服務未連接');
+        return;
+    }
+
+    if (!confirm('確定要手動創建雲端備份嗎？')) {
+        return;
+    }
+
+    try {
+        const timestamp = Date.now();
+        const today = getLocalDateStr();
+        const backupId = `manual-${timestamp}`;
+
+        const backupData = {
+            backupDate: today,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            isManual: true,
+            data: {
+                tasks: state.tasks || [],
+                ganttSystem: state.ganttSystem || { projects: [] },
+                accounting: state.accounting || { transactions: [], banks: [], categories: [] },
+                stockPrice: state.stockPrice || 100,
+                history: state.history || [],
+                lastLoginDate: state.lastLoginDate || ''
+            }
+        };
+
+        await db.collection('dailyBackups').doc(backupId).set(backupData);
+
+        const taskCount = state.tasks.length;
+        const projectCount = (state.ganttSystem && state.ganttSystem.projects) ? state.ganttSystem.projects.length : 0;
+        const transactionCount = (state.accounting && state.accounting.transactions) ? state.accounting.transactions.length : 0;
+
+        alert(`雲端備份成功！\n\n備份內容：\n- 任務：${taskCount} 個\n- 專案：${projectCount} 個\n- 記帳：${transactionCount} 筆`);
+    } catch (error) {
+        console.error('Manual backup failed:', error);
+        alert('雲端備份失敗：' + error.message);
+    }
+};
+
+// List cloud backups
+window.listCloudBackups = async function () {
+    if (!db) {
+        alert('雲端服務未連接');
+        return;
+    }
+
+    const listEl = document.getElementById('cloudBackupList');
+    if (!listEl) return;
+
+    try {
+        listEl.classList.remove('hidden');
+        listEl.innerHTML = '<div style="text-align:center; padding:10px;">正在載入雲端備份...</div>';
+
+        const snapshot = await db.collection('dailyBackups')
+            .orderBy('createdAt', 'desc')
+            .limit(10)
+            .get();
+
+        if (snapshot.empty) {
+            listEl.innerHTML = '<div style="text-align:center; padding:10px; color:var(--text-secondary);">目前沒有雲端備份</div>';
+            return;
+        }
+
+        let html = '<div style="margin-bottom:8px; font-weight:bold; border-bottom: 1px solid var(--border-color); padding-bottom:8px;">可用的雲端備份</div>';
+
+        snapshot.docs.forEach(doc => {
+            const data = doc.data();
+            const backupDate = data.backupDate || '未知';
+            const createdAt = data.createdAt ? data.createdAt.toDate().toLocaleString('zh-TW') : '未知';
+            const isManual = data.isManual ? ' (手動)' : ' (自動)';
+
+            const taskCount = (data.data && data.data.tasks) ? data.data.tasks.length : 0;
+            const projectCount = (data.data && data.data.ganttSystem && data.data.ganttSystem.projects) ? data.data.ganttSystem.projects.length : 0;
+
+            html += `
+                <div style="border-bottom:1px solid rgba(255,255,255,0.1); padding:8px 0; margin-bottom:8px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                        <strong style="color:var(--accent-blue);">${backupDate}${isManual}</strong>
+                        <button onclick="restoreFromCloudBackup('${doc.id}')" class="btn-confirm small" style="font-size:0.7rem; padding:4px 10px; background:var(--accent-green);">還原</button>
+                    </div>
+                    <div style="font-size:0.8rem; color:var(--text-secondary);">
+                        創建時間：${createdAt}<br>
+                        任務：${taskCount} | 專案：${projectCount}
+                    </div>
+                </div>
+            `;
+        });
+
+        listEl.innerHTML = html;
+    } catch (error) {
+        console.error('Failed to list cloud backups:', error);
+        listEl.innerHTML = '<div style="color:var(--accent-red); padding:10px;">載入失敗：' + error.message + '</div>';
+    }
+};
+
+// Restore from cloud backup
+window.restoreFromCloudBackup = async function (backupId) {
+    if (!db) {
+        alert('雲端服務未連接');
+        return;
+    }
+
+    try {
+        const doc = await db.collection('dailyBackups').doc(backupId).get();
+        if (!doc.exists) {
+            alert('備份不存在');
+            return;
+        }
+
+        const backupData = doc.data();
+        const taskCount = (backupData.data && backupData.data.tasks) ? backupData.data.tasks.length : 0;
+        const projectCount = (backupData.data && backupData.data.ganttSystem && backupData.data.ganttSystem.projects) ? backupData.data.ganttSystem.projects.length : 0;
+        const transactionCount = (backupData.data && backupData.data.accounting && backupData.data.accounting.transactions) ? backupData.data.accounting.transactions.length : 0;
+
+        const confirmMsg = `確定要從此備份還原數據嗎？\n\n備份信息：\n- 備份日期：${backupData.backupDate}\n- 任務：${taskCount} 個\n- 專案：${projectCount} 個\n- 記帳：${transactionCount} 筆\n\n警告：這將完全覆蓋當前所有數據！`;
+
+        if (!confirm(confirmMsg)) {
+            return;
+        }
+
+        // Restore data
+        state.tasks = backupData.data.tasks || [];
+        state.ganttSystem = backupData.data.ganttSystem || { projects: [] };
+        state.accounting = backupData.data.accounting || { transactions: [], banks: [], categories: [] };
+        state.stockPrice = backupData.data.stockPrice || 100;
+        state.history = backupData.data.history || [];
+        state.lastLoginDate = backupData.data.lastLoginDate || '';
+
+        // Validate and repair
+        validateAndRepairState();
+
+        // Save to cloud
+        saveState('CloudBackupRestore');
+
+        alert('數據還原成功！即將重新整理頁面...');
+        setTimeout(() => window.location.reload(), 500);
+
+    } catch (error) {
+        console.error('Failed to restore from cloud backup:', error);
+        alert('還原失敗：' + error.message);
+    }
+};
+
+// Bind cloud backup buttons in DOMContentLoaded
+document.addEventListener('DOMContentLoaded', () => {
+    const createBtn = document.getElementById('createCloudBackupBtn');
+    const listBtn = document.getElementById('listCloudBackupsBtn');
+
+    if (createBtn) {
+        createBtn.onclick = window.createManualCloudBackup;
+        console.log('Cloud backup create button bound');
+    }
+    if (listBtn) {
+        listBtn.onclick = window.listCloudBackups;
+        console.log('Cloud backup list button bound');
+    }
+});
+
+
+// ============================================
+// Calendar Rendering with Today Highlight
+// ============================================
+
+// Add this to ensure calendar rendering has today highlight
+// This should be called when schedule view is rendered
+window.renderCalendarWithTodayHighlight = function () {
+    const calendarGrid = document.getElementById('calendarGrid');
+    if (!calendarGrid) return;
+
+    const today = getLocalDateStr();
+
+    // Find all calendar day elements and add today class to matching date
+    const dayElements = calendarGrid.querySelectorAll('.calendar-day');
+    dayElements.forEach(dayEl => {
+        const dayDate = dayEl.dataset.date; // Assumes calendar days have data-date attribute
+        if (dayDate === today) {
+            dayEl.classList.add('today');
+        }
+    });
+};
+
+// Patch renderView to call calendar highlight when switching to schedule
+const originalRenderView = window.renderView || renderView;
+if (typeof originalRenderView === 'function') {
+    window.renderView = function (viewName) {
+        originalRenderView(viewName);
+
+        if (viewName === 'schedule') {
+            // Wait for DOM update then highlight today
+            setTimeout(() => {
+                renderCalendarWithTodayHighlight();
+            }, 10);
+        }
+    };
+}
 

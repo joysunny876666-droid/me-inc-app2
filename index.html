@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Me Inc. 個人股價</title>
+    <title>時間管理大師</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -33,13 +33,35 @@
         <!-- Start View (Dashboard) -->
         <div id="startView" class="view active">
             <header class="header">
-                <div class="logo">Me Inc. <span
+                <div class="logo">時間管理大師 <span
                         style="font-size: 0.8rem; opacity: 0.7; color: var(--text-secondary); cursor: pointer;"
-                        onclick="forceUpdate()">v6.05 (點我更新)</span></div>
+                        onclick="forceUpdate()">v6.09 (點我更新)</span></div>
                 <div class="current-price-container">
                     <span class="price-label">當前股價</span>
                     <h1 id="currentPrice" class="price-value">100.00</h1>
                     <span id="priceChange" class="price-change">+0.00%</span>
+                </div>
+
+                <div id="syncStatusIndicator" class="sync-indicator sync-loading">◌ 同步中...</div>
+
+                <!-- Diagnostic Panel (Hidden by default, triggered by clicking version 5 times) -->
+                <div id="debugPanel" class="hidden"
+                    style="margin-top: 20px; padding: 15px; background: rgba(0,0,0,0.5); border: 1px dashed var(--accent-red); border-radius: 8px; font-family: monospace; font-size: 0.8rem;">
+                    <h3 style="color: var(--accent-red); margin-bottom: 10px;">診斷面板</h3>
+                    <div id="debugStats">任務總數: 0 | 企劃數: 0</div>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button onclick="copyRawData()" class="btn-secondary small"
+                            style="margin-top: 10px;">複製原始資料</button>
+                        <button onclick="toggleDebugRaw()" class="btn-secondary small"
+                            style="margin-top: 10px;">查看內容</button>
+                        <button onclick="scanForBackups()" class="btn-confirm small"
+                            style="margin-top: 10px; background: var(--accent-blue); padding: 4px 12px; font-size: 0.8rem;">掃描備份資料</button>
+                    </div>
+                    <div id="scanResults" class="hidden"
+                        style="margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid var(--accent-blue); border-radius: 4px; max-height: 150px; overflow-y: auto;">
+                    </div>
+                    <pre id="debugRaw" class="hidden"
+                        style="margin-top: 10px; max-height: 200px; overflow: auto; white-space: pre-wrap; word-break: break-all; color: var(--text-secondary);"></pre>
                 </div>
 
                 <!-- Search Bar -->
@@ -75,7 +97,7 @@
 
                     <nav class="main-nav"
                         style="margin: 20px 0; position: static; width: auto; padding: 0; background: transparent; border: none;">
-                        <button id="navDataBtn" class="nav-btn btn-secondary">數據</button>
+                        <button id="navDataBtn" class="nav-btn btn-secondary">設定/數據</button>
                         <button id="navAddBtn" class="nav-btn btn-primary">新增選項</button>
                         <button id="navScheduleBtn" class="nav-btn btn-secondary">每日行程</button>
                     </nav>
@@ -336,6 +358,66 @@
                 </button>
             </header>
             <main class="content" style="padding:16px;">
+                <!-- Sync Status Indicator -->
+                <div id="dataSyncStatusDisplay" class="sync-indicator-card"
+                    style="margin-bottom: 16px; padding: 12px; background: var(--card-bg); border-radius: 8px; border: 1px solid var(--border-color);">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span id="dataSyncStatus">● 已同步 (雲端)</span>
+                    </div>
+                </div>
+
+                <!-- Diagnostic Panel -->
+                <div id="dataDiagnosticPanel"
+                    style="margin-bottom: 16px; padding: 15px; background: var(--card-bg); border-radius: 8px; border: 1px solid var(--border-color);">
+                    <h3 style="margin-bottom: 10px; font-size: 1rem;">診斷資訊</h3>
+                    <div id="dataDiagnosticStats" style="font-size: 0.9rem; color: var(--text-secondary);">任務總數: 0 |
+                        企劃數: 0</div>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px;">
+                        <button onclick="copyRawData()" class="btn-secondary small">複製原始資料</button>
+                        <button onclick="toggleDebugRaw()" class="btn-secondary small">查看內容</button>
+                        <button onclick="scanForBackups()" class="btn-confirm small"
+                            style="background: var(--accent-blue);">掃描備份資料</button>
+                    </div>
+                    <div id="dataScanResults" class="hidden"
+                        style="margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid var(--accent-blue); border-radius: 4px; max-height: 150px; overflow-y: auto;">
+                    </div>
+                    <pre id="dataDebugRaw" class="hidden"
+                        style="margin-top: 10px; max-height: 200px; overflow: auto; white-space: pre-wrap; word-break: break-all; color: var(--text-secondary);"></pre>
+                </div>
+
+                <!-- Local Storage Controls -->
+                <div
+                    style="margin-bottom: 20px; padding: 15px; background: var(--card-bg); border-radius: 8px; border: 1px solid var(--border-color);">
+                    <h3 style="margin-bottom: 12px; font-size: 1rem;">本地備份與還原</h3>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                        <button id="exportLocalDataBtn" class="btn-primary">本地儲存</button>
+                        <button id="importLocalDataBtn" class="btn-secondary">本地載入</button>
+                    </div>
+                    <input type="file" id="importFileInput" accept=".txt,.json" style="display: none;">
+                    <p style="margin-top: 8px; font-size: 0.85rem; color: var(--text-secondary);">
+                        儲存：將所有數據導出為文字檔<br>
+                        載入：從文字檔恢復數據（將覆蓋當前數據）
+                    </p>
+                </div>
+
+                <!-- Cloud Backup Controls -->
+                <div
+                    style="margin-bottom: 20px; padding: 15px; background: var(--card-bg); border-radius: 8px; border: 1px solid var(--border-color);">
+                    <h3 style="margin-bottom: 12px; font-size: 1rem;">雲端備份與還原</h3>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px;">
+                        <button id="createCloudBackupBtn" class="btn-primary">手動雲端備份</button>
+                        <button id="listCloudBackupsBtn" class="btn-secondary">查看雲端備份</button>
+                    </div>
+                    <div id="cloudBackupList" class="hidden"
+                        style="margin-top: 12px; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid var(--accent-blue); border-radius: 4px; max-height: 300px; overflow-y: auto;">
+                        <!-- 雲端備份列表將在這裡顯示 -->
+                    </div>
+                    <p style="margin-top: 8px; font-size: 0.85rem; color: var(--text-secondary);">
+                        自動備份：每日自動備份前一天的數據<br>
+                        保留策略：保留最近 2 天的備份
+                    </p>
+                </div>
+
                 <div style="display: flex; justify-content: center; gap: 8px; margin-bottom: 16px;">
                     <button id="dataYesterdayBtn" class="btn-secondary small active">昨日</button>
                     <button id="dataTodayBtn" class="btn-secondary small">今日</button>
@@ -996,7 +1078,7 @@
         </div>
     </div>
 
-    <script src="app.js?v=5.2"></script>
+    <script src="app.js?v=5.6"></script>
 </body>
 
 </html>

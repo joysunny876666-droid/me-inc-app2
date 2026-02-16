@@ -37,7 +37,52 @@
 
     --header-height: auto;
     --max-width: 1200px;
-    /* Increased for desktop responsiveness */
+}
+
+.sync-indicator {
+    font-size: 0.75rem;
+    text-align: center;
+    margin-top: 8px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    display: inline-block;
+    width: fit-content;
+    align-self: center;
+}
+
+.sync-synced {
+    color: #10b981;
+    background: rgba(16, 185, 129, 0.1);
+}
+
+.sync-error {
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.1);
+}
+
+.sync-offline {
+    color: #94a3b8;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.sync-loading {
+    color: #3b82f6;
+    background: rgba(59, 130, 246, 0.1);
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        opacity: 0.6;
+    }
+
+    50% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0.6;
+    }
 }
 
 * {
@@ -470,6 +515,15 @@ select:focus {
 .day-indicator.has-important {
     background: var(--accent-red);
 }
+
+/* Today highlight - yellow border */
+.calendar-day.today {
+    border: 2px solid #f59e0b;
+    /* Amber/Yellow */
+    background: rgba(245, 158, 11, 0.1);
+    /* Subtle yellow tint */
+}
+
 
 /* Modal */
 .modal {
