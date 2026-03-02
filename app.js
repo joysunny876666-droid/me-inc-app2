@@ -48,6 +48,16 @@ try {
     if (typeof firebase !== 'undefined') {
         firebase.initializeApp(firebaseConfig);
         var db = firebase.firestore();
+
+        // Enable Offline Persistence
+        db.enablePersistence()
+            .catch((err) => {
+                if (err.code == 'failed-precondition') {
+                    console.warn('Persistence failed: Multiple tabs open');
+                } else if (err.code == 'unimplemented') {
+                    console.warn('Persistence not supported by browser');
+                }
+            });
     } else {
         console.warn("Firebase not loaded from CDN.");
     }
@@ -409,6 +419,32 @@ function setupCloudSync() {
                         }
                     }
 
+                    // --- NEW: Smart Merge Logic (Midnight Sync Fix) ---
+                    // If local task was completed, but cloud says it wasn't and penalized it:
+                    let requiresCorrectionSave = false;
+                    if (state.tasks && cloudData.tasks) {
+                        cloudData.tasks.forEach(cloudTask => {
+                            const localTask = state.tasks.find(t => t.id === cloudTask.id);
+                            if (localTask && localTask.completedHistory && cloudTask.penaltyHistory) {
+                                Object.keys(cloudTask.penaltyHistory).forEach(penaltyDate => {
+                                    if (cloudTask.penaltyHistory[penaltyDate] && localTask.completedHistory[penaltyDate]) {
+                                        console.log(`[Smart Merge] Resolved conflict for task ${cloudTask.name} on ${penaltyDate}. Reverting penalty.`);
+                                        // 1. Remove penalty
+                                        delete cloudTask.penaltyHistory[penaltyDate];
+                                        // 2. Restore completion
+                                        if (!cloudTask.completedHistory) cloudTask.completedHistory = {};
+                                        cloudTask.completedHistory[penaltyDate] = true;
+                                        // 3. Refund score
+                                        if (cloudTask.score > 0) {
+                                            cloudData.stockPrice += cloudTask.score;
+                                        }
+                                        requiresCorrectionSave = true;
+                                    }
+                                });
+                            }
+                        });
+                    }
+
                     // Deep merge or specific field merge is safer than spread
                     // For now, update global state but keep non-serializable UI state
                     state = { ...defaultState, ...cloudData };
@@ -418,6 +454,12 @@ function setupCloudSync() {
 
                     // Save to local storage as catch-up
                     localStorage.setItem('me-inc-state', JSON.stringify(state));
+
+                    if (requiresCorrectionSave) {
+                        console.log("Smart merge corrected penalties. Saving corrected state back to cloud.");
+                        saveState("SmartMergeCorrection");
+                    }
+
 
                     isCloudSyncStarted = true;
                     if (!isInitialSyncDone) {
@@ -529,6 +571,15 @@ function saveState(reason = "Unknown") {
 
 function setupEventListeners() {
     console.log("Setting up event listeners...");
+
+    // --- NEW: Force save on app background/close for mobile reliability ---
+    document.addEventListener('visibilitychange', () => {
+        // Run immediately when page goes to background
+        if (document.visibilityState === 'hidden') {
+            console.log("App moved to background, ensuring state is saved.");
+            saveState("AppBackgrounded");
+        }
+    });
 
     // Debug: Check if elements exist
     if (!els.nav.addBtn) console.error("MISSING: nav.addBtn");
@@ -1985,13 +2036,24 @@ function renderWeeklySchedule() {
         tasks.forEach(task => {
             if (!task.time) return; // Only show timed tasks in grid
 
-            const [h, m] = task.time.split(':').map(Number);
+            // Normalize time string (replace full-width colon, trim)
+            const timeStr = task.time.replace('：', ':').trim();
+            const [h, m] = timeStr.split(':').map(Number);
+
+            if (isNaN(h) || isNaN(m)) {
+                console.error("Invalid time format for task:", task.name, task.time);
+                return;
+            }
+
             let startH = h + m / 60;
             let duration = 0.5; // Default 30 mins
 
             if (task.endTime) {
-                const [eh, em] = task.endTime.split(':').map(Number);
-                duration = (eh + em / 60) - startH;
+                const endTimeStr = task.endTime.replace('：', ':').trim();
+                const [eh, em] = endTimeStr.split(':').map(Number);
+                if (!isNaN(eh) && !isNaN(em)) {
+                    duration = (eh + em / 60) - startH;
+                }
                 if (duration < 0.5) duration = 0.5;
             }
 
@@ -2067,7 +2129,12 @@ function renderUntimedSidebar(weekDays) {
     const todayStr = getLocalDateStr();
     const todayList = els.dashboard.untimedTodayList;
     const weeklyList = els.dashboard.untimedWeeklyList;
-    if (!todayList || !weeklyList) return;
+    if (!todayList || !weeklyList) {
+        console.error("Untimed Data Lists not found!");
+        return;
+    }
+
+    console.log("Rendering Untimed Sidebar for week:", weekDays[0].toLocaleDateString());
 
     todayList.innerHTML = '';
     weeklyList.innerHTML = '';
@@ -2076,12 +2143,22 @@ function renderUntimedSidebar(weekDays) {
 
     // 1. Regular Untimed Tasks
     state.tasks.forEach(task => {
-        if (task.time) return; // Only untimed
+        // Check if task has a valid time set (non-empty string)
+        // Check if task has a valid time set (non-empty string)
+        const hasTime = task.time && task.time.trim().length > 0;
+
+        if (hasTime) {
+            // console.log("Skipping timed task:", task.name, task.time);
+            return;
+        }
+
+        // console.log("Processing untimed task:", task.name);
 
         // Check each day of the week if this task applies
         weekStrs.forEach(dStr => {
             const applies = getTasksForDate(dStr).some(t => t.id == task.id);
             if (applies) {
+                console.log("Render untimed:", task.name, "for", dStr);
                 const isToday = dStr === todayStr;
                 const isDone = task.completedHistory && task.completedHistory[dStr];
                 const item = createUntimedItemEl(task, dStr, isDone);
@@ -5015,6 +5092,23 @@ document.addEventListener('DOMContentLoaded', () => {
     if (listBtn) {
         listBtn.onclick = window.listCloudBackups;
         console.log('Cloud backup list button bound');
+    }
+
+    const accRecoveryBtn = document.getElementById('accDataRecoveryBtn');
+    if (accRecoveryBtn) {
+        accRecoveryBtn.onclick = () => {
+            // Close settings first
+            const settingsModal = document.getElementById('accountingSettingsModal');
+            if (settingsModal) settingsModal.classList.add('hidden');
+
+            // Switch to Data View
+            if (typeof renderView === 'function') renderView('data');
+
+            // Trigger Scan
+            setTimeout(() => {
+                if (window.scanForBackups) window.scanForBackups();
+            }, 500);
+        };
     }
 });
 
