@@ -2399,7 +2399,27 @@ function renderStartPage() {
     const todaysTasks = getTasksForDate(todayStr); // Fix: Define this!
 
     // Price
-    if (els.dashboard.price) els.dashboard.price.textContent = state.stockPrice.toFixed(2);
+    if (els.dashboard.price) {
+        els.dashboard.price.textContent = state.stockPrice.toFixed(2);
+
+        // --- NEW: Developer/Admin Manual Price Override ---
+        els.dashboard.price.ondblclick = () => {
+            const newPrice = prompt("【手動修正分數】請輸入您要強制修改的今日股價：", state.stockPrice);
+            if (newPrice !== null && !isNaN(parseFloat(newPrice))) {
+                state.stockPrice = parseFloat(newPrice);
+                const todayStr = getLocalDateStr();
+                const historyIndex = state.history.findIndex(h => h.date === todayStr);
+                if (historyIndex >= 0) {
+                    state.history[historyIndex].price = state.stockPrice;
+                } else {
+                    state.history.push({ date: todayStr, price: state.stockPrice });
+                }
+                saveState("ManualPriceEdit");
+                renderStartPage();
+                alert(`股價已強制修改為 ${state.stockPrice}，並將同步至雲端。`);
+            }
+        };
+    }
     if (state.history.length > 0 && els.dashboard.change) {
         const last = state.history[state.history.length - 1];
         const diff = state.stockPrice - last.price;
