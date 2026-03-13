@@ -581,6 +581,24 @@ function setupEventListeners() {
         }
     });
 
+    // --- NEW: Sync Debug Click Handler ---
+    const syncIndicatorEl = document.getElementById('syncStatusIndicator');
+    if (syncIndicatorEl) {
+        syncIndicatorEl.style.cursor = 'pointer';
+        syncIndicatorEl.onclick = () => {
+            let msg = `[同步狀態診斷]\n目前狀態: ${syncIndicatorEl.textContent}\n是否有資料庫實體: ${typeof db !== 'undefined' ? '有' : '無'}\n雲端同步是否啟動: ${isCloudSyncStarted ? '是' : '否'}\n最後本地存檔時間: ${state.updatedAt ? new Date(state.updatedAt).toLocaleString() : '無'}`;
+
+            if (confirm(msg + '\n\n【進階】\n如果您認為手機卡住了！按「確定」可以嘗試將手機上的分數強制覆寫到雲端，如果想讓雲端覆寫手機請按「取消」。')) {
+                saveState("ManualUserForceSync");
+                alert("已強制將本地資料往雲端推送，請等待1分鐘觀察電腦是否同步變更。");
+            } else {
+                if (confirm('確實要嘗試下載雲端資料嗎？(如果有找到有效的雲端存檔會覆寫目前手機畫面)')) {
+                    alert("如果您在離線模式，請先確認手機網路連線，如果不行的話請用無痕模式重新開啟網址。");
+                }
+            }
+        };
+    }
+
     // Debug: Check if elements exist
     if (!els.nav.addBtn) console.error("MISSING: nav.addBtn");
     if (!els.nav.scheduleBtn) console.error("MISSING: nav.scheduleBtn");
@@ -2404,7 +2422,9 @@ function renderStartPage() {
     // Point Tasks (No end time) -> List
 
     // 1. Daily Routine (Recurring Today)
-    const dailyRoutineTasks = todaysTasks.filter(t => t.type === 'recurring');
+    let dailyRoutineTasks = todaysTasks.filter(t => t.type === 'recurring');
+    // Exclude Ranged Tasks (ones with a time AND an endTime) from Daily Routine
+    dailyRoutineTasks = dailyRoutineTasks.filter(t => !(t.time && t.endTime && els.addForm.inputs.isTimeRange));
     dailyRoutineTasks.sort(timeSort);
 
     if (els.dashboard.dailyList) {
@@ -2417,7 +2437,9 @@ function renderStartPage() {
     }
 
     // 2. All Schedule (All Today)
-    const allPointTasks = todaysTasks;
+    let allPointTasks = todaysTasks;
+    // Exclude Ranged Tasks from All Schedule
+    allPointTasks = allPointTasks.filter(t => !(t.time && t.endTime));
 
     // --- NEW: Combine with Gantt Tasks for Today ---
     const ganttTasks = getGanttTasksForDate(todayStr);
@@ -2437,8 +2459,8 @@ function renderStartPage() {
     // 3. Important (Critical Global)
     const criticalTasks = state.tasks.filter(t => t.importance === 'critical');
     criticalTasks.sort((a, b) => {
-        const dateA = a.type === 'recurring' ? todayStr : (a.date || '9999-99-99');
-        const dateB = b.type === 'recurring' ? todayStr : (b.date || '9999-99-99');
+        const dateA = (a.type === 'recurring' || a.isPersistent || a.isMission || a.isBadHabit) ? todayStr : (a.date || '9999-99-99');
+        const dateB = (b.type === 'recurring' || b.isPersistent || b.isMission || b.isBadHabit) ? todayStr : (b.date || '9999-99-99');
         if (dateA !== dateB) return dateA.localeCompare(dateB);
         return timeSort(a, b);
     });
@@ -2446,7 +2468,9 @@ function renderStartPage() {
     if (els.dashboard.importantList) {
         els.dashboard.importantList.innerHTML = '';
         criticalTasks.forEach(task => {
-            const targetDate = task.type === 'recurring' ? todayStr : task.date;
+            const targetDate = (task.type === 'recurring' || task.isPersistent || task.isMission || task.isBadHabit) ? todayStr : task.date;
+            // Also exclude Ranged tasks from Important List if they exist
+            if (task.time && task.endTime) return;
             els.dashboard.importantList.appendChild(createTaskEl(task, targetDate, true));
         });
     }
