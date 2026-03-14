@@ -2477,7 +2477,28 @@ function renderStartPage() {
     }
 
     // 3. Important (Critical Global)
-    const criticalTasks = state.tasks.filter(t => t.importance === 'critical');
+    let criticalTasks = state.tasks.filter(t => {
+        if (t.importance !== 'critical') return false;
+
+        // Exclude Ranged tasks from Important List
+        if (t.time && t.endTime) return false;
+
+        // Hide scheduled tasks from past dates
+        if (t.type === 'scheduled' && t.date < todayStr) return false;
+
+        // Hide missions completed before today
+        if (t.isMission) {
+            const completedDates = t.completedHistory ? Object.keys(t.completedHistory).filter(d => t.completedHistory[d]) : [];
+            const firstCompletionDate = completedDates.length > 0 ? completedDates.sort()[0] : null;
+            if (firstCompletionDate && firstCompletionDate < todayStr) return false;
+        }
+
+        // Hide bad habits completed today (per user request)
+        if (t.isBadHabit && t.completedHistory && t.completedHistory[todayStr]) return false;
+
+        return true;
+    });
+
     criticalTasks.sort((a, b) => {
         const dateA = (a.type === 'recurring' || a.isPersistent || a.isMission || a.isBadHabit) ? todayStr : (a.date || '9999-99-99');
         const dateB = (b.type === 'recurring' || b.isPersistent || b.isMission || b.isBadHabit) ? todayStr : (b.date || '9999-99-99');
@@ -2489,8 +2510,6 @@ function renderStartPage() {
         els.dashboard.importantList.innerHTML = '';
         criticalTasks.forEach(task => {
             const targetDate = (task.type === 'recurring' || task.isPersistent || task.isMission || task.isBadHabit) ? todayStr : task.date;
-            // Also exclude Ranged tasks from Important List if they exist
-            if (task.time && task.endTime) return;
             els.dashboard.importantList.appendChild(createTaskEl(task, targetDate, true));
         });
     }
