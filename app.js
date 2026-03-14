@@ -406,17 +406,18 @@ function setupCloudSync() {
                     const localHasData = (state.tasks && state.tasks.length > 0) || (state.ganttSystem && state.ganttSystem.projects && state.ganttSystem.projects.length > 0);
                     const cloudHasData = (cloudData.tasks && cloudData.tasks.length > 0) || (cloudData.ganttSystem && cloudData.ganttSystem.projects && cloudData.ganttSystem.projects.length > 0);
 
-                    if (cloudUpdated < localUpdated && !isInitialSyncDone) {
-                        if (!localHasData && cloudHasData) {
-                            console.warn("Local is empty but Cloud has data. Preferring Cloud to avoid data loss.");
-                            // Continue to merge cloud into local
-                        } else {
-                            console.log("Cloud data is older than local, pushing local update to cloud.");
+                    if (!isInitialSyncDone) {
+                        if (!cloudHasData && localHasData) {
+                            console.warn("Cloud is completely empty but Local has data. Pushing local to cloud to initialize.");
                             isCloudSyncStarted = true;
                             isInitialSyncDone = true;
-                            saveState("InitialSync_LocalNewer");
+                            saveState("InitialSync_CloudEmpty");
                             return;
+                        } else {
+                            console.log("Initial Sync: Downloading Cloud Data as Source of Truth.");
                         }
+                    } else if (cloudUpdated < localUpdated) {
+                        // Regular flow, do nothing extra
                     }
 
                     // --- NEW: Smart Merge Logic (Midnight Sync Fix) ---
