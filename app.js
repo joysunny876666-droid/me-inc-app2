@@ -2483,8 +2483,8 @@ function renderStartPage() {
         // Exclude Ranged tasks from Important List
         if (t.time && t.endTime) return false;
 
-        // Hide scheduled tasks from past dates
-        if (t.type === 'scheduled' && t.date < todayStr) return false;
+        // Hide scheduled tasks from past dates (but KEEP missions, persistent, and bad habits)
+        if (t.type === 'scheduled' && !t.isMission && !t.isPersistent && !t.isBadHabit && t.date < todayStr) return false;
 
         // Hide missions completed before today
         if (t.isMission) {
