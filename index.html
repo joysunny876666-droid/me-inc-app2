@@ -43,6 +43,11 @@
                 </div>
 
                 <div id="syncStatusIndicator" class="sync-indicator sync-loading">◌ 同步中...</div>
+                
+                <div class="manual-sync-controls" style="display: flex; gap: 10px; margin-top: 15px; justify-content: center;">
+                    <button id="btnManualDownload" class="btn-primary" style="flex: 1; font-size: 0.9rem; padding: 8px;">📥 下載雲端紀錄</button>
+                    <button id="btnManualUpload" class="btn-confirm" style="flex: 1; font-size: 0.9rem; padding: 8px;">📤 覆寫至雲端</button>
+                </div>
 
                 <!-- Diagnostic Panel (Hidden by default, triggered by clicking version 5 times) -->
                 <div id="debugPanel" class="hidden"

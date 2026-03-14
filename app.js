@@ -395,98 +395,48 @@ function setupCloudSync() {
                     console.log("Cloud data received");
                     const cloudData = doc.data();
 
-                    // --- NEW: Sync Conflict Resolution ---
-                    // If local data is significantly newer (or cloud is missing key fields), be careful
-                    const localUpdated = state.updatedAt || 0;
+                    // --- NEW: Manual Sync Mode ---
+                    // We DO NOT automatically merge or save anything anymore.
+                    // We just listen to know if cloud data is connected and updated.
                     const cloudUpdated = cloudData.updatedAt || 0;
-
-                    // --- CRITICAL SAFETY CHECK ---
-                    // Only push local update if we have actual data, or if we've already confirmed cloud is empty.
-                    // If local is empty and cloud has data, WE MUST PREFER CLOUD even if timestamp is older (recovery mode)
-                    const localHasData = (state.tasks && state.tasks.length > 0) || (state.ganttSystem && state.ganttSystem.projects && state.ganttSystem.projects.length > 0);
-                    const cloudHasData = (cloudData.tasks && cloudData.tasks.length > 0) || (cloudData.ganttSystem && cloudData.ganttSystem.projects && cloudData.ganttSystem.projects.length > 0);
-
-                    if (!isInitialSyncDone) {
-                        if (!cloudHasData && localHasData) {
-                            console.warn("Cloud is completely empty but Local has data. Pushing local to cloud to initialize.");
-                            isCloudSyncStarted = true;
-                            isInitialSyncDone = true;
-                            saveState("InitialSync_CloudEmpty");
-                            return;
-                        } else {
-                            console.log("Initial Sync: Downloading Cloud Data as Source of Truth.");
-                        }
-                    } else if (cloudUpdated < localUpdated) {
-                        // Regular flow, do nothing extra
+                    const localUpdated = state.updatedAt || 0;
+                    
+                    if (cloudUpdated > localUpdated) {
+                        updateSyncIndicator("CloudNewer"); // Inform user they should probably download
+                    } else {
+                        updateSyncIndicator("Synced");
                     }
-
-                    // --- NEW: Smart Merge Logic (Midnight Sync Fix) ---
-                    // If local task was completed, but cloud says it wasn't and penalized it:
-                    let requiresCorrectionSave = false;
-                    if (state.tasks && cloudData.tasks) {
-                        cloudData.tasks.forEach(cloudTask => {
-                            const localTask = state.tasks.find(t => t.id === cloudTask.id);
-                            if (localTask && localTask.completedHistory && cloudTask.penaltyHistory) {
-                                Object.keys(cloudTask.penaltyHistory).forEach(penaltyDate => {
-                                    if (cloudTask.penaltyHistory[penaltyDate] && localTask.completedHistory[penaltyDate]) {
-                                        console.log(`[Smart Merge] Resolved conflict for task ${cloudTask.name} on ${penaltyDate}. Reverting penalty.`);
-                                        // 1. Remove penalty
-                                        delete cloudTask.penaltyHistory[penaltyDate];
-                                        // 2. Restore completion
-                                        if (!cloudTask.completedHistory) cloudTask.completedHistory = {};
-                                        cloudTask.completedHistory[penaltyDate] = true;
-                                        // 3. Refund score
-                                        if (cloudTask.score > 0) {
-                                            cloudData.stockPrice += cloudTask.score;
-                                        }
-                                        requiresCorrectionSave = true;
-                                    }
-                                });
-                            }
-                        });
-                    }
-
-                    // Deep merge or specific field merge is safer than spread
-                    // For now, update global state but keep non-serializable UI state
-                    state = { ...defaultState, ...cloudData };
-
-                    // Validate integrity after merge
-                    validateAndRepairState();
-
-                    // Save to local storage as catch-up
-                    localStorage.setItem('me-inc-state', JSON.stringify(state));
-
-                    if (requiresCorrectionSave) {
-                        console.log("Smart merge corrected penalties. Saving corrected state back to cloud.");
-                        saveState("SmartMergeCorrection");
-                    }
-
 
                     isCloudSyncStarted = true;
                     if (!isInitialSyncDone) {
                         isInitialSyncDone = true;
-                        console.log("Initial Cloud Sync Done.");
+                        console.log("Initial Cloud Connection Established. Auto-sync disabled. User must manually sync.");
+                        
+                        // Initial Boot: Only do local calculations, don't touch cloud
+                        checkDailyPenaltiesOnLoad();
+                        checkImmediatePenalties();
+                        fixDataAnomalies();
+                        runAutomaticCleanup();
+                        renderView(currentView || 'start');
                     }
+                    
+                    // We keep a reference to be able to manually fetch later if needed
+                    window.lastCloudData = cloudData;
                 } else {
-                    console.log("No cloud data, permitted to sync and save default.");
+                    console.log("No cloud data, user must manually upload.");
                     isCloudSyncStarted = true;
-                    isInitialSyncDone = true;
-                    saveState("CloudDataEmpty");
+                    if (!isInitialSyncDone) {
+                        isInitialSyncDone = true;
+                        
+                        // Just boot local
+                        checkDailyPenaltiesOnLoad();
+                        checkImmediatePenalties();
+                        fixDataAnomalies();
+                        runAutomaticCleanup();
+                        renderView(currentView || 'start');
+                    }
+                    updateSyncIndicator("Synced");
                 }
-
-                // After data updates, check logic and render
-                checkDailyPenaltiesOnLoad();
-                checkImmediatePenalties();
-
-                // --- NEW: Data Fix (Run once) ---
-                fixDataAnomalies();
-
-                // --- NEW: Automatic Cleanup ---
-                runAutomaticCleanup();
-
-                renderView(currentView || 'start');
-                updateSyncIndicator("Synced");
-                updateDebugInfo(); // Update diagnostic info on sync
 
                 // Check and perform daily backup after initial sync
                 if (isInitialSyncDone) {
@@ -516,19 +466,25 @@ function updateSyncIndicator(status) {
 
     switch (status) {
         case 'Synced':
-            el.textContent = '● 已同步層 (雲端)';
+            el.textContent = '● 已連線 (就緒)';
             el.className = 'sync-indicator sync-synced';
+            break;
+        case 'CloudNewer':
+            el.textContent = '↑ 雲端有新資料';
+            el.className = 'sync-indicator' ;
+            el.style.backgroundColor = 'var(--accent-blue)';
+            el.style.color = 'white';
             break;
         case 'Offline':
             el.textContent = '○ 離線模式';
             el.className = 'sync-indicator sync-offline';
             break;
         case 'Error':
-            el.textContent = '⚠ 同步異常';
+            el.textContent = '⚠ 連線異常';
             el.className = 'sync-indicator sync-error';
             break;
         case 'Loading':
-            el.textContent = '◌ 同步中...';
+            el.textContent = '◌ 連線中...';
             el.className = 'sync-indicator sync-loading';
             break;
     }
@@ -573,6 +529,52 @@ function saveState(reason = "Unknown") {
 function setupEventListeners() {
     console.log("Setting up event listeners...");
 
+    // --- NEW: Manual Sync Connectors ---
+    const btnManualDownload = document.getElementById('btnManualDownload');
+    if (btnManualDownload) {
+        btnManualDownload.onclick = async () => {
+            if (!db) return alert("資料庫未連接！");
+            if (confirm("【警告】這將會用雲端的資料直接「覆蓋」你現在手機上的資料。確定嗎？")) {
+                btnManualDownload.textContent = "下載中...";
+                try {
+                    const doc = await db.collection('data').doc('state').get();
+                    if (doc.exists) {
+                        state = { ...defaultState, ...doc.data() };
+                        validateAndRepairState();
+                        // Force local save without triggering cloud save immediately
+                        state.updatedAt = Date.now();
+                        localStorage.setItem('me-inc-state', JSON.stringify(state));
+                        
+                        alert("✅ 成功從雲端下載！");
+                        renderStartPage();
+                    } else {
+                        alert("雲端沒有任何資料可下載。");
+                    }
+                } catch (err) {
+                    console.error("Manual Download Error:", err);
+                    alert("下載失敗：" + err.message);
+                } finally {
+                    btnManualDownload.textContent = "📥 下載雲端紀錄";
+                }
+            }
+        };
+    }
+
+    const btnManualUpload = document.getElementById('btnManualUpload');
+    if (btnManualUpload) {
+        btnManualUpload.onclick = () => {
+             if (!db) return alert("資料庫未連接！");
+             if (confirm("這將會把你目前看到的分數和清單「強制備份」到雲端，給其他裝置使用。確定嗎？")) {
+                 btnManualUpload.textContent = "上傳中...";
+                 saveState("ManualUserUpload");
+                 setTimeout(() => {
+                     btnManualUpload.textContent = "📤 覆寫至雲端";
+                     alert("✅ 已成功備份至雲端！");
+                 }, 1000);
+             }
+        };
+    }
+
     // --- NEW: Force save on app background/close for mobile reliability ---
     document.addEventListener('visibilitychange', () => {
         // Run immediately when page goes to background
@@ -587,16 +589,9 @@ function setupEventListeners() {
     if (syncIndicatorEl) {
         syncIndicatorEl.style.cursor = 'pointer';
         syncIndicatorEl.onclick = () => {
-            let msg = `[同步狀態診斷]\n目前狀態: ${syncIndicatorEl.textContent}\n是否有資料庫實體: ${typeof db !== 'undefined' ? '有' : '無'}\n雲端同步是否啟動: ${isCloudSyncStarted ? '是' : '否'}\n最後本地存檔時間: ${state.updatedAt ? new Date(state.updatedAt).toLocaleString() : '無'}`;
+            let msg = `[連線狀態診斷]\n目前狀態: ${syncIndicatorEl.textContent}\n是否有資料庫實體: ${typeof db !== 'undefined' ? '有' : '無'}\n連線是否啟動: ${isCloudSyncStarted ? '是' : '否'}\n最後本地存檔時間: ${state.updatedAt ? new Date(state.updatedAt).toLocaleString() : '無'}`;
 
-            if (confirm(msg + '\n\n【進階】\n如果您認為手機卡住了！按「確定」可以嘗試將手機上的分數強制覆寫到雲端，如果想讓雲端覆寫手機請按「取消」。')) {
-                saveState("ManualUserForceSync");
-                alert("已強制將本地資料往雲端推送，請等待1分鐘觀察電腦是否同步變更。");
-            } else {
-                if (confirm('確實要嘗試下載雲端資料嗎？(如果有找到有效的雲端存檔會覆寫目前手機畫面)')) {
-                    alert("如果您在離線模式，請先確認手機網路連線，如果不行的話請用無痕模式重新開啟網址。");
-                }
-            }
+            alert(msg);
         };
     }
 
