@@ -1092,6 +1092,25 @@
         </div>
     </div>
 
+    <!--
+        ============================================================
+        程式碼模組說明 (Code Module Reference)
+        ============================================================
+        app.js 是完整的、實際執行的程式碼。
+        modules/ 資料夾中的檔案是按功能分類整理的「參考模組」，
+        加上了詳細的中文註解，方便學習和理解程式碼架構。
+
+        如果要改為模組化載入，需依以下順序載入：
+        <script src="modules/00_state.js"></script>    ← 全局狀態 & Firebase 設定
+        <script src="modules/01_cloud.js"></script>    ← 雲端同步
+        <script src="modules/02_tasks.js"></script>    ← 任務管理
+        <script src="modules/03_stock.js"></script>    ← 股價/懲罰系統
+        <script src="modules/04_accounting.js"></script> ← 記帳系統
+        <script src="modules/05_gantt.js"></script>    ← 甘特圖系統
+        <script src="modules/06_calendar.js"></script>  ← 月曆 & 週行程
+        <script src="modules/07_ui.js"></script>       ← UI 框架 & 初始化（最後載入）
+        ============================================================
+    -->
     <script src="app.js?v=5.6"></script>
 </body>
 

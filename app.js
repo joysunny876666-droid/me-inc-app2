@@ -2439,8 +2439,7 @@ function renderStartPage() {
 
     // 1. Daily Routine (Recurring Today)
     let dailyRoutineTasks = todaysTasks.filter(t => t.type === 'recurring');
-    // Exclude Ranged Tasks (ones with a time AND an endTime) from Daily Routine
-    dailyRoutineTasks = dailyRoutineTasks.filter(t => !(t.time && t.endTime && els.addForm.inputs.isTimeRange));
+    // Recurring tasks ALWAYS show in the daily list for now to ensure visibility
     dailyRoutineTasks.sort(timeSort);
 
     if (els.dashboard.dailyList) {
@@ -2454,8 +2453,8 @@ function renderStartPage() {
 
     // 2. All Schedule (All Today)
     let allPointTasks = todaysTasks;
-    // Exclude Ranged Tasks from All Schedule
-    allPointTasks = allPointTasks.filter(t => !(t.time && t.endTime));
+    // We show all tasks in the list for now to ensure nothing is "hidden" unexpectedly
+    // Users can use the Time Table for visual layout, but list should be comprehensive.
 
     // --- NEW: Combine with Gantt Tasks for Today ---
     const ganttTasks = getGanttTasksForDate(todayStr);
@@ -2545,93 +2544,89 @@ function renderStartPage() {
 }
 
 function getTasksForDate(dateStr) {
-    const dateObj = new Date(dateStr);
-    const dayOfWeek = dateObj.getDay();
-    const dayOfMonth = dateObj.getDate();
+    if (!state.tasks) return [];
+    
+    return state.tasks.reduce((acc, task) => {
+        // Prepare a copy with overrides for THIS specific date
+        let effectiveTask = { ...task };
+        let isInstanceIncluded = false;
 
-    return state.tasks.filter(task => {
-        if (task.exceptions && task.exceptions.includes(dateStr)) return false;
-        const taskStartDate = task.date || (task.createdAt ? task.createdAt.split('T')[0] : '1970-01-01');
-        if (dateStr < taskStartDate) return false;
-
-        // Is it completed BEFORE this date?
-        const completedDates = task.completedHistory ? Object.keys(task.completedHistory).filter(d => task.completedHistory[d]) : [];
-        const firstCompletionDate = completedDates.length > 0 ? completedDates.sort()[0] : null;
-
-        if (task.isMission) {
-            // Mission tasks appear until they are completed
-            if (firstCompletionDate && firstCompletionDate < dateStr) return false;
-            return true;
-        }
-
-        if (task.isPersistent) {
-            // Persistent tasks always appear from start date onwards
-            return true;
-        }
-
-        // NEW: Bad Habit Logic
-        // Always appears daily starting from creation, UNLESS completed (checked) for that specific date
-        if (task.isBadHabit) {
-            const startStr = task.createdAt ? task.createdAt.split('T')[0] : '1970-01-01';
-            if (dateStr < startStr) return false;
-
-            // If completed today, HIDE it (User request: "勾選完後直到明天都不會出現")
-            if (task.completedHistory && task.completedHistory[dateStr]) return false;
-
-            return true;
-        }
-
-        if (task.type === 'scheduled') {
-            return task.date === dateStr;
-        } else if (task.type === 'recurring') {
-            // Recurrence Logic
-            const interval = task.recurrence.interval || 1;
-            // Use specific startDate if available, else fallback to createdAt
-            const startStr = task.recurrence.startDate || (task.createdAt ? task.createdAt.split('T')[0] : '1970-01-01');
-            const endStr = task.recurrence.endDate;
-
-            const startDate = new Date(startStr);
-            const targetDate = new Date(dateStr);
-
-            // If target is before start, no
-            if (dateStr < startStr) return false;
-            // If target is after end, no
-            if (endStr && dateStr > endStr) return false;
-
-            const diffTime = targetDate - startDate;
-            const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-
-            const rType = task.recurrence.type;
-
-            if (rType === 'daily') {
-                return diffDays % interval === 0;
-            } else if (rType === 'weekly') {
-                // Check if same day of week AND correct week interval
-                // Modified for Custom Weekdays
-                if (task.recurrence.daysOfWeek && task.recurrence.daysOfWeek.length > 0) {
-                    const currentDay = targetDate.getDay();
-                    if (!task.recurrence.daysOfWeek.includes(currentDay)) return false;
-
-                    // Interval check (Standard 7-day blocks from start date)
-                    const weeksPassed = Math.floor(diffDays / 7);
-                    return weeksPassed % interval === 0;
-                }
-
-                return diffDays % (7 * interval) === 0;
-            } else if (rType === 'monthly') {
-                // Monthly logic: Same day of month, month diff % interval === 0
-                const targetDay = targetDate.getDate();
-                const startDay = startDate.getDate();
-                if (targetDay !== startDay) return false; // Must be same day of month
-
-                // Calculate month difference
-                // (Y2 - Y1) * 12 + (M2 - M1)
-                const monthDiff = (targetDate.getFullYear() - startDate.getFullYear()) * 12 + (targetDate.getMonth() - startDate.getMonth());
-                return monthDiff % interval === 0;
+        // Check for specific date override/exception
+        if (task.exceptions && task.exceptions[dateStr]) {
+            const ex = task.exceptions[dateStr];
+            if (ex === true) {
+                // Task is explicitly deleted/hidden for today
+                return acc;
+            } else if (typeof ex === 'object') {
+                // Apply overrides (name, time, score, etc.)
+                Object.assign(effectiveTask, ex);
+                isInstanceIncluded = true; // Overridden instance is always included
             }
         }
-        return false;
-    });
+
+        // If not explicitly included via override, check standard recurrence
+        if (!isInstanceIncluded) {
+            const taskStartDate = task.date || (task.createdAt ? task.createdAt.split('T')[0] : '1970-01-01');
+            if (dateStr < taskStartDate) return acc;
+
+            // Mission Logic
+            if (task.isMission) {
+                const completedDates = task.completedHistory ? Object.keys(task.completedHistory).filter(d => task.completedHistory[d]) : [];
+                const firstCompletionDate = completedDates.length > 0 ? completedDates.sort()[0] : null;
+                if (!(firstCompletionDate && firstCompletionDate < dateStr)) {
+                    isInstanceIncluded = true;
+                }
+            }
+            // Persistent / Bad Habit Logic
+            else if (task.isPersistent) {
+                isInstanceIncluded = true;
+            }
+            else if (task.isBadHabit) {
+                if (!(task.completedHistory && task.completedHistory[dateStr])) {
+                    isInstanceIncluded = true;
+                }
+            }
+            // Scheduled / Recurring Logic
+            else if (task.type === 'scheduled') {
+                if (task.date === dateStr) isInstanceIncluded = true;
+            } else if (task.type === 'recurring') {
+                const interval = task.recurrence.interval || 1;
+                const startStr = task.recurrence.startDate || (task.createdAt ? task.createdAt.split('T')[0] : '1970-01-01');
+                const endStr = task.recurrence.endDate;
+                const startDate = new Date(startStr);
+                const targetDate = new Date(dateStr);
+
+                if (dateStr >= startStr && (!endStr || dateStr <= endStr)) {
+                    const diffTime = targetDate - startDate;
+                    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                    const rType = task.recurrence.type;
+
+                    if (rType === 'daily') {
+                        if (diffDays % interval === 0) isInstanceIncluded = true;
+                    } else if (rType === 'weekly') {
+                        if (task.recurrence.daysOfWeek && task.recurrence.daysOfWeek.length > 0) {
+                            if (task.recurrence.daysOfWeek.includes(targetDate.getDay())) {
+                                const weeksPassed = Math.floor(diffDays / 7);
+                                if (weeksPassed % interval === 0) isInstanceIncluded = true;
+                            }
+                        } else if (diffDays % (7 * interval) === 0) {
+                            isInstanceIncluded = true;
+                        }
+                    } else if (rType === 'monthly') {
+                        if (targetDate.getDate() === startDate.getDate()) {
+                            const monthDiff = (targetDate.getFullYear() - startDate.getFullYear()) * 12 + (targetDate.getMonth() - startDate.getMonth());
+                            if (monthDiff % interval === 0) isInstanceIncluded = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (isInstanceIncluded) {
+            acc.push(effectiveTask);
+        }
+        return acc;
+    }, []);
 }
 
 function getGanttTasksForDate(dateStr) {
@@ -2675,13 +2670,11 @@ function createTaskEl(task, dateStr, showDateLabel) {
     const el = document.createElement('div');
     el.className = 'task-item';
 
-    // Handle Gantt Completed State vs Normal
-    let isCompleted = false;
-    if (task.isGantt) {
-        isCompleted = task.completed;
-    } else {
-        isCompleted = task.completedHistory && task.completedHistory[dateStr];
-    }
+    // Note: task is already pre-overridden by getTasksForDate in this app version
+    const isCompleted = task.isGantt ? task.completed : (task.completedHistory && task.completedHistory[dateStr]);
+    if (isCompleted) el.classList.add('completed');
+
+
     let timeLabel = '';
     if (task.time) {
         timeLabel = task.time;
@@ -2689,7 +2682,7 @@ function createTaskEl(task, dateStr, showDateLabel) {
             timeLabel += ` - ${task.endTime}`;
         }
     }
-    const timeDisplay = timeLabel ? `<span style="margin-right:4px; color:var(--text-secondary); font-size:0.8rem;">${timeLabel}</span>` : '';
+    const timeDisplay = timeLabel ? `<span style="margin-right:4px; color:var(--text-secondary); font-size:0.8rem;">⏰ ${timeLabel}</span>` : '';
 
     let dateDisplay = '';
     if (showDateLabel) {
@@ -2703,60 +2696,44 @@ function createTaskEl(task, dateStr, showDateLabel) {
     }
 
     el.innerHTML = `
-        <input type="checkbox" class="task-checkbox" ${isCompleted ? 'checked' : ''}>
+        <div class="task-check-wrapper" onclick="toggleTask(${task.id}, '${dateStr}', !${!!isCompleted}, event)">
+            <div class="task-checkbox">
+                ${isCompleted ? '✓' : ''}
+            </div>
+        </div>
         <div class="task-info">
             <span class="task-name" style="${isCompleted && !task.isPersistent ? 'text-decoration: line-through; opacity: 0.5;' : ''}">
                 ${dateDisplay}${timeDisplay} ${task.name}
             </span>
             <div class="task-meta">
                 <span class="task-score ${task.score >= 0 ? 'positive' : 'negative'}">
-                    ${task.score >= 0 ? '+' : ''}${task.score}
+                    ${task.score >= 0 ? '+' : ''}${task.score} 分
                 </span>
                 <span>• ${mapImportance(task.importance)}</span>
             </div>
         </div>
+        <div class="task-actions">
+            <button onclick="event.stopPropagation(); openEditModal(state.tasks.find(t=>t.id==${task.id}), '${dateStr}')" class="btn-icon">✏️</button>
+            <button onclick="event.stopPropagation(); openDeleteModal(state.tasks.find(t=>t.id==${task.id}), '${dateStr}')" class="btn-icon">🗑️</button>
+        </div>
     `;
 
-    const checkbox = el.querySelector('.task-checkbox');
-
     if (task.isGantt) {
-        // Gantt specific handler
-        checkbox.onchange = () => {
-            // toggleGanttItem(projId, parentId, id, isChecked)
-            // Note: toggleGanttItem re-renders viewProjectDetail, we might need to re-render Start Page too.
-            // But toggleGanttItem ends with viewProjectDetail(projId). It doesn't call renderStartPage!
-            // We need to intercept or ensure renderStartPage updates.
-            // Actually, we can just call toggleGanttItem and THEN renderStartPage manually or wait for auto-refresh?
-            // Auto refresh is 60s. Better to update immediately.
-
-            toggleGanttItem(task.projId, task.parentId || '', task.id, checkbox.checked);
-            // Since toggleGanttItem saves state, we can re-render start.
-            // NOTE: toggleGanttItem calls viewProjectDetail which might try to find elements not on screen if we are in Start View.
-            // But viewProjectDetail checks if (!proj) return... and renders into 'ganttProjectDetailView'.
-            // If we are on Start View, we shouldn't switch view.
-
-            setTimeout(() => {
-                renderStartPage();
-            }, 100);
-        };
-        // Add visual cue
         const nameEl = el.querySelector('.task-name');
         if (nameEl) {
             nameEl.innerHTML += ` <span style="font-size:0.7rem; color:var(--accent-blue);">(企劃)</span>`;
         }
-    } else {
-        checkbox.onchange = () => toggleTask(task.id, dateStr, checkbox.checked);
     }
-
     return el;
 }
 
-function toggleTask(taskId, dateStr, isChecked) {
+function toggleTask(taskId, dateStr, isChecked, event) {
+    if (event) event.stopPropagation();
     const task = state.tasks.find(t => t.id == taskId);
     if (!task) return;
 
     if (!task.completedHistory) task.completedHistory = {};
-    const wasChecked = task.completedHistory[dateStr];
+    const wasChecked = !!task.completedHistory[dateStr];
 
     if (task.isPersistent) {
         // Persistent tasks award points every time they are "checked"
@@ -2830,10 +2807,20 @@ function toggleTask(taskId, dateStr, isChecked) {
         }
     } else {
         task.completedHistory[dateStr] = isChecked;
+        
+        // --- NEW: Handle Score Override for Toggle ---
+        let effectiveScore = task.score;
+        if (task.exceptions && typeof task.exceptions[dateStr] === 'object') {
+            const override = task.exceptions[dateStr];
+            if (override.score !== undefined) {
+                effectiveScore = override.score;
+            }
+        }
+
         if (isChecked && !wasChecked) {
-            state.stockPrice += task.score;
+            state.stockPrice += effectiveScore;
         } else if (!isChecked && wasChecked) {
-            state.stockPrice -= task.score;
+            state.stockPrice -= effectiveScore;
         }
     }
 
@@ -3401,8 +3388,9 @@ function initiateDelete(task, dateStr) {
             // Single Cancel - RE-FETCH to prevent stale state
             const freshTask = state.tasks.find(t => t.id === taskToDelete.id);
             if (freshTask) {
-                if (!freshTask.exceptions) freshTask.exceptions = [];
-                freshTask.exceptions.push(dateToDelete);
+                if (!freshTask.exceptions) freshTask.exceptions = {};
+                // UNIFY: Use object format instead of array
+                freshTask.exceptions[dateToDelete] = true; 
                 saveState(); // Explicit save here
             }
             finishDelete();
