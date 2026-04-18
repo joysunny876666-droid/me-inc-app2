@@ -270,31 +270,26 @@ function setupEditListeners() {
             const isRecSet = document.getElementById('editIsRecurring').checked;
 
             if (task) {
-                task.name = newName;
-                task.score = newScore;
-                task.importance = newImportance;
-                task.isMission = newIsMission;
-                task.isPersistent = newIsPersistent;
-                task.isBadHabit = newIsBadHabit;
-                task.time = newTime;
-                task.endTime = newEndTime;
-
+                // DO NOT mutate task directly here!
+                let pendingRecurrence = null;
                 if (isRecSet) {
-                    task.type = 'recurring';
                     const interval = parseInt(document.getElementById('editRecurrenceInterval').value) || 1;
                     const type = document.getElementById('editRecurrenceType').value;
-                    const rec = { type, interval, startDate: newDate };
+                    pendingRecurrence = { type, interval, startDate: newDate };
                     if (type === 'weekly') {
-                        rec.daysOfWeek = Array.from(document.getElementsByName('editRecurrenceDay'))
+                        pendingRecurrence.daysOfWeek = Array.from(document.getElementsByName('editRecurrenceDay'))
                             .filter(c => c.checked).map(c => parseInt(c.value));
                     }
-                    task.recurrence = rec;
-                } else {
-                    if (task.type === 'recurring') { task.type = 'scheduled'; delete task.recurrence; }
-                    task.date = newDate;
                 }
 
-                editPendingData = { name: newName, time: newTime, endTime: newEndTime, newDate, score: newScore, importance: newImportance, isMission: newIsMission, isPersistent: newIsPersistent, isBadHabit: newIsBadHabit };
+                editPendingData = {
+                    name: newName, time: newTime, endTime: newEndTime, newDate: newDate,
+                    score: newScore, importance: newImportance,
+                    isMission: newIsMission, isPersistent: newIsPersistent, isBadHabit: newIsBadHabit,
+                    isRecSet: isRecSet,
+                    recurrence: pendingRecurrence
+                };
+
                 taskToEdit = task;
                 editOriginalDateVal = originalDate;
 
@@ -302,6 +297,7 @@ function setupEditListeners() {
                     // 顯示「修改範圍」Modal（僅此次 / 此後全部）
                     els.editScopeModal.el.classList.remove('hidden');
                 } else {
+                    applyPendingEditsToTask(task);
                     finishEdit();
                 }
             } else {
@@ -337,6 +333,28 @@ function setupEditListeners() {
 }
 
 /**
+ * 將編輯內容直接套用到目標任務上 (用於不需選擇範圍的普通任務)
+ */
+function applyPendingEditsToTask(targetTask) {
+    targetTask.name = editPendingData.name;
+    targetTask.score = editPendingData.score;
+    targetTask.importance = editPendingData.importance;
+    targetTask.isMission = editPendingData.isMission;
+    targetTask.isPersistent = editPendingData.isPersistent;
+    targetTask.isBadHabit = editPendingData.isBadHabit;
+    targetTask.time = editPendingData.time;
+    targetTask.endTime = editPendingData.endTime;
+
+    if (editPendingData.isRecSet) {
+        targetTask.type = 'recurring';
+        targetTask.recurrence = editPendingData.recurrence;
+    } else {
+        if (targetTask.type === 'recurring') { targetTask.type = 'scheduled'; delete targetTask.recurrence; }
+        targetTask.date = editPendingData.newDate;
+    }
+}
+
+/**
  * 【updateRecurringSingle】修改「僅此次」重複任務
  * 做法：在原任務加上 exception，然後建立一個新的單次任務
  */
@@ -359,9 +377,12 @@ function updateRecurringSingle() {
         endTime: editPendingData.endTime,
         score: editPendingData.score,
         importance: editPendingData.importance,
+        isMission: editPendingData.isMission,
+        isPersistent: editPendingData.isPersistent,
+        isBadHabit: editPendingData.isBadHabit,
         exceptions: {},
         completedHistory: {},
-        penaltyHistory: {},
+        badHabitHistory: {},
         createdAt: editPendingData.newDate
     };
 
@@ -381,7 +402,9 @@ function updateRecurringFuture() {
     // 設定舊序列的結束日期為原始日期的前一天
     const yesterday = new Date(editOriginalDateVal);
     yesterday.setDate(yesterday.getDate() - 1);
-    freshTask.recurrence.endDate = getLocalDateStr(yesterday);
+    if (freshTask.recurrence) {
+        freshTask.recurrence.endDate = getLocalDateStr(yesterday);
+    }
 
     // 建立新的重複序列，從新日期開始
     const newTask = {
@@ -392,11 +415,22 @@ function updateRecurringFuture() {
         endTime: editPendingData.endTime,
         score: editPendingData.score,
         importance: editPendingData.importance,
+        isMission: editPendingData.isMission,
+        isPersistent: editPendingData.isPersistent,
+        isBadHabit: editPendingData.isBadHabit,
+        type: editPendingData.isRecSet ? 'recurring' : 'scheduled',
         createdAt: editPendingData.newDate,
-        recurrence: { ...freshTask.recurrence, startDate: editPendingData.newDate, endDate: null },
         completedHistory: {},
-        penaltyHistory: {}
+        badHabitHistory: {}
     };
+
+    if (editPendingData.isRecSet) {
+        newTask.recurrence = { ...editPendingData.recurrence, startDate: editPendingData.newDate, endDate: null };
+        newTask.date = null;
+    } else {
+        newTask.recurrence = null;
+        newTask.date = editPendingData.newDate;
+    }
 
     state.tasks.push(newTask);
     els.editScopeModal.el.classList.add('hidden');

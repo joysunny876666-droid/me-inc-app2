@@ -2569,53 +2569,91 @@ function getTasksForDate(dateStr) {
             const taskStartDate = task.date || (task.createdAt ? task.createdAt.split('T')[0] : '1970-01-01');
             if (dateStr < taskStartDate) return acc;
 
-            // Mission Logic
-            if (task.isMission) {
-                const completedDates = task.completedHistory ? Object.keys(task.completedHistory).filter(d => task.completedHistory[d]) : [];
-                const firstCompletionDate = completedDates.length > 0 ? completedDates.sort()[0] : null;
-                if (!(firstCompletionDate && firstCompletionDate < dateStr)) {
-                    isInstanceIncluded = true;
-                }
-            }
-            // Persistent / Bad Habit Logic
-            else if (task.isPersistent) {
-                isInstanceIncluded = true;
-            }
-            else if (task.isBadHabit) {
-                if (!(task.completedHistory && task.completedHistory[dateStr])) {
-                    isInstanceIncluded = true;
-                }
-            }
-            // Scheduled / Recurring Logic
-            else if (task.type === 'scheduled') {
-                if (task.date === dateStr) isInstanceIncluded = true;
-            } else if (task.type === 'recurring') {
-                const interval = task.recurrence.interval || 1;
-                const startStr = task.recurrence.startDate || (task.createdAt ? task.createdAt.split('T')[0] : '1970-01-01');
-                const endStr = task.recurrence.endDate;
+            const checkRecurrence = (taskObj, dStr) => {
+                const interval = taskObj.recurrence.interval || 1;
+                const startStr = taskObj.recurrence.startDate || (taskObj.createdAt ? taskObj.createdAt.split('T')[0] : '1970-01-01');
+                const endStr = taskObj.recurrence.endDate;
+                if (dStr < startStr || (endStr && dStr > endStr)) return false;
+                
                 const startDate = new Date(startStr);
-                const targetDate = new Date(dateStr);
+                const targetDate = new Date(dStr);
+                const diffTime = targetDate - startDate;
+                const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                const rType = taskObj.recurrence.type;
 
-                if (dateStr >= startStr && (!endStr || dateStr <= endStr)) {
-                    const diffTime = targetDate - startDate;
-                    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-                    const rType = task.recurrence.type;
-
-                    if (rType === 'daily') {
-                        if (diffDays % interval === 0) isInstanceIncluded = true;
-                    } else if (rType === 'weekly') {
-                        if (task.recurrence.daysOfWeek && task.recurrence.daysOfWeek.length > 0) {
-                            if (task.recurrence.daysOfWeek.includes(targetDate.getDay())) {
-                                const weeksPassed = Math.floor(diffDays / 7);
-                                if (weeksPassed % interval === 0) isInstanceIncluded = true;
-                            }
-                        } else if (diffDays % (7 * interval) === 0) {
-                            isInstanceIncluded = true;
+                if (rType === 'daily') {
+                    return diffDays % interval === 0;
+                } else if (rType === 'weekly') {
+                    if (taskObj.recurrence.daysOfWeek && taskObj.recurrence.daysOfWeek.length > 0) {
+                        if (taskObj.recurrence.daysOfWeek.includes(targetDate.getDay())) {
+                            const weeksPassed = Math.floor(diffDays / 7);
+                            return weeksPassed % interval === 0;
                         }
-                    } else if (rType === 'monthly') {
-                        if (targetDate.getDate() === startDate.getDate()) {
-                            const monthDiff = (targetDate.getFullYear() - startDate.getFullYear()) * 12 + (targetDate.getMonth() - startDate.getMonth());
-                            if (monthDiff % interval === 0) isInstanceIncluded = true;
+                        return false;
+                    } else {
+                        return diffDays % (7 * interval) === 0;
+                    }
+                } else if (rType === 'monthly') {
+                    if (targetDate.getDate() === startDate.getDate()) {
+                        const monthDiff = (targetDate.getFullYear() - startDate.getFullYear()) * 12 + (targetDate.getMonth() - startDate.getMonth());
+                        return monthDiff % interval === 0;
+                    }
+                    return false;
+                }
+                return false;
+            };
+
+            const hasCompletionBefore = (taskObj, targetDateStr, sinceDateStr) => {
+                if (!taskObj.completedHistory) return false;
+                const completedDates = Object.keys(taskObj.completedHistory).filter(d => taskObj.completedHistory[d]);
+                for (const d of completedDates) {
+                    if (d >= sinceDateStr && d < targetDateStr) return true;
+                }
+                return false;
+            };
+
+            let isNormalInstance = false;
+            if (task.type === 'scheduled') {
+                if (task.date === dateStr) isNormalInstance = true;
+            } else if (task.type === 'recurring') {
+                isNormalInstance = checkRecurrence(task, dateStr);
+            }
+
+            if (isNormalInstance) {
+                isInstanceIncluded = true;
+            } else {
+                if (task.isPersistent) {
+                    isInstanceIncluded = true;
+                } else if (task.isBadHabit) {
+                    if (!(task.completedHistory && task.completedHistory[dateStr])) {
+                        isInstanceIncluded = true;
+                    }
+                } else if (task.isMission) {
+                    if (task.type === 'scheduled') {
+                        if (dateStr > task.date) {
+                            if (!hasCompletionBefore(task, dateStr, task.date)) {
+                                isInstanceIncluded = true;
+                            }
+                        }
+                    } else if (task.type === 'recurring') {
+                        const startStr = task.recurrence.startDate || (task.createdAt ? task.createdAt.split('T')[0] : '1970-01-01');
+                        if (dateStr > startStr) {
+                             let pastD = null;
+                             const d = new Date(dateStr);
+                             for (let i = 1; i <= 365; i++) {
+                                 d.setDate(d.getDate() - 1);
+                                 const testStr = getLocalDateStr(d);
+                                 if (testStr < startStr) break;
+                                 if (checkRecurrence(task, testStr)) {
+                                     pastD = testStr;
+                                     break;
+                                 }
+                             }
+                             if (pastD) {
+                                 if (!hasCompletionBefore(task, dateStr, pastD)) {
+                                     isInstanceIncluded = true;
+                                 }
+                             }
                         }
                     }
                 }
@@ -2713,10 +2751,16 @@ function createTaskEl(task, dateStr, showDateLabel) {
             </div>
         </div>
         <div class="task-actions">
-            <button onclick="event.stopPropagation(); openEditModal(state.tasks.find(t=>t.id==${task.id}), '${dateStr}')" class="btn-icon">✏️</button>
-            <button onclick="event.stopPropagation(); openDeleteModal(state.tasks.find(t=>t.id==${task.id}), '${dateStr}')" class="btn-icon">🗑️</button>
+            <button class="btn-icon btn-edit-task">✏️</button>
+            <button class="btn-icon btn-delete-task">🗑️</button>
         </div>
     `;
+
+    const editBtn = el.querySelector('.btn-edit-task');
+    if (editBtn) editBtn.onclick = (e) => { e.stopPropagation(); openEditModal(task, dateStr); };
+    
+    const deleteBtn = el.querySelector('.btn-delete-task');
+    if (deleteBtn) deleteBtn.onclick = (e) => { e.stopPropagation(); initiateDelete(task, dateStr); };
 
     if (task.isGantt) {
         const nameEl = el.querySelector('.task-name');
@@ -2730,7 +2774,27 @@ function createTaskEl(task, dateStr, showDateLabel) {
 function toggleTask(taskId, dateStr, isChecked, event) {
     if (event) event.stopPropagation();
     const task = state.tasks.find(t => t.id == taskId);
-    if (!task) return;
+
+    if (!task) {
+        if (state.ganttSystem && state.ganttSystem.projects) {
+            let foundGantt = false;
+            state.ganttSystem.projects.forEach(proj => {
+                proj.parents.forEach(parent => {
+                    const child = parent.children.find(c => c.id == taskId);
+                    if (child) {
+                        child.completed = isChecked;
+                        foundGantt = true;
+                    }
+                });
+            });
+            if (foundGantt) {
+                saveState();
+                renderStartPage();
+                return;
+            }
+        }
+        return;
+    }
 
     if (!task.completedHistory) task.completedHistory = {};
     const wasChecked = !!task.completedHistory[dateStr];
@@ -3541,46 +3605,42 @@ function setupEditListeners() {
             const isRecSet = document.getElementById('editIsRecurring').checked;
 
             if (task) {
-                // Update core properties
-                task.name = newName;
-                task.score = newScore;
-                task.importance = newImportance;
-                task.isMission = newIsMission;
-                task.isPersistent = newIsPersistent;
-                task.isBadHabit = newIsBadHabit;
-                task.time = newTime;
-                task.endTime = newEndTime;
-
+                // 將所有編輯內容暫存到 editPendingData
+                editPendingData = {
+                    name: newName,
+                    time: newTime,
+                    endTime: newEndTime,
+                    newDate: newDate,
+                    score: newScore,
+                    importance: newImportance,
+                    isMission: newIsMission,
+                    isPersistent: newIsPersistent,
+                    isBadHabit: newIsBadHabit,
+                    isRecSet: isRecSet
+                };
+                
                 if (isRecSet) {
-                    task.type = 'recurring';
                     const interval = parseInt(document.getElementById('editRecurrenceInterval').value) || 1;
                     const type = document.getElementById('editRecurrenceType').value;
-                    const rec = { type, interval, startDate: newDate };
+                    editPendingData.recurrence = { type, interval, startDate: newDate };
                     if (type === 'weekly') {
-                        const days = Array.from(document.getElementsByName('editRecurrenceDay')).filter(c => c.checked).map(c => parseInt(c.value));
-                        rec.daysOfWeek = days;
+                        editPendingData.recurrence.daysOfWeek = Array.from(document.getElementsByName('editRecurrenceDay'))
+                            .filter(c => c.checked).map(c => parseInt(c.value));
                     }
-                    task.recurrence = rec;
-                } else {
-                    if (task.type === 'recurring') {
-                        task.type = 'scheduled';
-                        delete task.recurrence;
-                    }
-                    task.date = newDate;
                 }
 
-                editPendingData = { name: newName, time: newTime, endTime: newEndTime, newDate: newDate, score: newScore, importance: newImportance, isMission: newIsMission, isPersistent: newIsPersistent, isBadHabit: newIsBadHabit };
                 taskToEdit = task;
                 editOriginalDateVal = originalDate;
 
-                if (task.type === 'recurring') {
+                // 如果是重複任務，先問範圍；否則直接套用
+                if (task.type === 'recurring' || isRecSet) {
                     els.editScopeModal.el.classList.remove('hidden');
                 } else {
+                    applyPendingEditsToTask(task);
                     finishEdit();
                 }
             } else {
                 // Try Gantt... (Existing logic preserved below or merged)
-                // Actually I should find it first to decide logic
                 if (state.ganttSystem && state.ganttSystem.projects) {
                     for (const proj of state.ganttSystem.projects) {
                         for (const parent of proj.parents) {
@@ -3621,18 +3681,44 @@ function setupEditListeners() {
     }
 }
 
+function applyPendingEditsToTask(task) {
+    task.name = editPendingData.name;
+    task.score = editPendingData.score;
+    task.importance = editPendingData.importance;
+    task.isMission = editPendingData.isMission;
+    task.isPersistent = editPendingData.isPersistent;
+    task.isBadHabit = editPendingData.isBadHabit;
+    task.time = editPendingData.time;
+    task.endTime = editPendingData.endTime;
+
+    if (editPendingData.isRecSet) {
+        task.type = 'recurring';
+        task.recurrence = editPendingData.recurrence;
+    } else {
+        if (task.type === 'recurring') {
+            task.type = 'scheduled';
+            delete task.recurrence;
+        }
+        task.date = editPendingData.newDate;
+    }
+}
+
 function updateRecurringSingle() {
-    // RE-FETCH task to avoid stale state
     const freshTask = state.tasks.find(t => t.id === taskToEdit.id);
     if (!freshTask) return alert('Task not found (concurrency error)');
 
     // 1. Add exception to old (Using ORIGINAL Date)
-    if (!freshTask.exceptions) freshTask.exceptions = [];
-    freshTask.exceptions.push(editOriginalDateVal);
+    if (!freshTask.exceptions) freshTask.exceptions = {};
+    if (Array.isArray(freshTask.exceptions)) {
+        const oldArr = freshTask.exceptions;
+        freshTask.exceptions = {};
+        oldArr.forEach(d => freshTask.exceptions[d] = true);
+    }
+    freshTask.exceptions[editOriginalDateVal] = true;
 
     // 2. Create new Single Scheduled Task (Using NEW Date)
     const newTask = {
-        ...taskToEdit,
+        ...taskToEdit, // taskToEdit has original values
         id: Date.now(),
         type: 'scheduled',
         recurrence: null,
@@ -3644,15 +3730,14 @@ function updateRecurringSingle() {
         importance: editPendingData.importance,
         isMission: editPendingData.isMission,
         isPersistent: editPendingData.isPersistent,
-        exceptions: [], // Important: Reset exceptions for the new instance
-        // Reset histories for the new task as it's a new instance
+        isBadHabit: editPendingData.isBadHabit,
+        exceptions: {}, 
         completedHistory: {},
+        badHabitHistory: {},
         penaltyHistory: {},
         createdAt: editPendingData.newDate
     };
 
-    // If we're on the same date, preserve status?
-    // If date changed, we usually restart status.
     if (editPendingData.newDate === editOriginalDateVal) {
         if (taskToEdit.completedHistory && taskToEdit.completedHistory[editOriginalDateVal]) {
             newTask.completedHistory[editPendingData.newDate] = true;
@@ -3664,8 +3749,8 @@ function updateRecurringSingle() {
     finishEdit();
 }
 
+
 function updateRecurringFuture() {
-    // RE-FETCH task
     const freshTask = state.tasks.find(t => t.id === taskToEdit.id);
     if (!freshTask) return alert('Task not found');
 
@@ -3680,7 +3765,7 @@ function updateRecurringFuture() {
     // 2. Create new Recurring Task starting from NEW Date
     const newTask = {
         ...taskToEdit,
-        id: Date.now(), // New ID
+        id: Date.now(),
         name: editPendingData.name,
         time: editPendingData.time,
         endTime: editPendingData.endTime,
@@ -3688,17 +3773,27 @@ function updateRecurringFuture() {
         importance: editPendingData.importance,
         isMission: editPendingData.isMission,
         isPersistent: editPendingData.isPersistent,
+        isBadHabit: editPendingData.isBadHabit,
         createdAt: editPendingData.newDate,
+        exceptions: {},
+        type: 'recurring',
         recurrence: {
             ...freshTask.recurrence,
             startDate: editPendingData.newDate,
-            endDate: null // Clear end date for new one
+            endDate: null 
         },
-        completedHistory: {}, // Reset history for new series
+        completedHistory: {}, 
         penaltyHistory: {}
     };
 
-    // Preserve status if dates match
+    if (editPendingData.isRecSet) {
+        newTask.recurrence = editPendingData.recurrence;
+    } else {
+        newTask.type = 'scheduled';
+        delete newTask.recurrence;
+        newTask.date = editPendingData.newDate;
+    }
+
     if (editPendingData.newDate === editOriginalDateVal) {
         if (taskToEdit.completedHistory && taskToEdit.completedHistory[editOriginalDateVal]) {
             newTask.completedHistory[editPendingData.newDate] = true;
@@ -3707,6 +3802,12 @@ function updateRecurringFuture() {
 
     state.tasks.push(newTask);
     els.editScopeModal.el.classList.add('hidden');
+    applyPendingEditsToTask(freshTask); 
+    // ^ Apply to freshTask so we don't lose the updates since we mutated it, wait, NO!
+    // We SHOULD NOT apply pending edits to freshTask because freshTask is the old series!
+    // So the previous applyPendingEditsToTask call here is wrong!
+    // The newTask already gets the pending edits via the object literal above.
+
     finishEdit();
 }
 

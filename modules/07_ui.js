@@ -59,9 +59,9 @@ function initEls() {
         // ─ 刪除確認 Modal（重複任務的刪除選擇）─
         deleteModal: {
             el:        document.getElementById('deleteModal'),
-            btnSingle: document.getElementById('deleteSingleBtn'),
-            btnAll:    document.getElementById('deleteAllBtn'),
-            btnCancel: document.getElementById('cancelDeleteBtn'),
+            btnSingle: document.getElementById('btnDeleteSingle'),
+            btnAll:    document.getElementById('btnDeleteAll'),
+            btnCancel: document.getElementById('btnCancelDelete'),
         },
 
         // ─ 編輯 Modal ─
@@ -85,9 +85,9 @@ function initEls() {
         // ─ 編輯範圍 Modal（重複任務：僅此次 / 之後全部）─
         editScopeModal: {
             el:        document.getElementById('editScopeModal'),
-            btnSingle: document.getElementById('editScopeThisOnly'),
-            btnFuture: document.getElementById('editScopeFuture'),
-            btnCancel: document.getElementById('editScopeCancel'),
+            btnSingle: document.getElementById('btnEditSingle'),
+            btnFuture: document.getElementById('btnEditFuture'),
+            btnCancel: document.getElementById('btnCancelEditScope'),
         },
 
         // ─ 新增任務表單 ─

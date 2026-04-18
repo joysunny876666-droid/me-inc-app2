@@ -58,52 +58,96 @@ function getTasksForDate(dateStr) {
         }
 
         // ─ 步驟2: 如果沒有被例外覆蓋，根據任務類型判斷 ─
+        // ─ 步驟2: 如果沒有被例外覆蓋，根據任務類型判斷 ─
         if (!isInstanceIncluded) {
             const taskStartDate = task.date || (task.createdAt ? task.createdAt.split('T')[0] : '1970-01-01');
             if (dateStr < taskStartDate) return acc; // 任務尚未開始
 
-            if (task.isMission) {
-                // 使命型任務：只要沒有在「更早之前」被完成，就持續顯示
-                const completedDates = task.completedHistory
-                    ? Object.keys(task.completedHistory).filter(d => task.completedHistory[d])
-                    : [];
-                const firstCompletionDate = completedDates.length > 0 ? completedDates.sort()[0] : null;
-                if (!(firstCompletionDate && firstCompletionDate < dateStr)) {
-                    isInstanceIncluded = true;
-                }
-            } else if (task.isPersistent) {
-                // 每次勾選型：永遠顯示
-                isInstanceIncluded = true;
-            } else if (task.isBadHabit) {
-                // 壞習慣型：如果那天已勾選（已犯），則不再顯示（以免重複懲罰）
-                if (!(task.completedHistory && task.completedHistory[dateStr])) {
-                    isInstanceIncluded = true;
-                }
-            } else if (task.type === 'scheduled') {
-                // 單次任務：只在指定日期顯示
-                if (task.date === dateStr) isInstanceIncluded = true;
-            } else if (task.type === 'recurring') {
-                // 重複任務：根據重複規則計算
-                const interval = task.recurrence.interval || 1;
-                const startStr = task.recurrence.startDate || (task.createdAt ? task.createdAt.split('T')[0] : '1970-01-01');
-                const endStr = task.recurrence.endDate;
+            const checkRecurrence = (taskObj, dStr) => {
+                const interval = taskObj.recurrence.interval || 1;
+                const startStr = taskObj.recurrence.startDate || (taskObj.createdAt ? taskObj.createdAt.split('T')[0] : '1970-01-01');
+                const endStr = taskObj.recurrence.endDate;
+                if (dStr < startStr || (endStr && dStr > endStr)) return false;
+                
                 const startDate = new Date(startStr);
-                const targetDate = new Date(dateStr);
+                const targetDate = new Date(dStr);
+                const diffTime = targetDate - startDate;
+                const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                const rType = taskObj.recurrence.type;
 
-                if (dateStr >= startStr && (!endStr || dateStr <= endStr)) {
-                    const diffDays = Math.floor((targetDate - startDate) / (1000 * 60 * 60 * 24));
+                if (rType === 'daily') {
+                    return diffDays % interval === 0;
+                } else if (rType === 'weekly') {
+                    if (taskObj.recurrence.daysOfWeek && taskObj.recurrence.daysOfWeek.length > 0) {
+                        if (taskObj.recurrence.daysOfWeek.includes(targetDate.getDay())) {
+                            const weeksPassed = Math.floor(diffDays / 7);
+                            return weeksPassed % interval === 0;
+                        }
+                        return false;
+                    } else {
+                        return diffDays % (7 * interval) === 0;
+                    }
+                } else if (rType === 'monthly') {
+                    if (targetDate.getDate() === startDate.getDate()) {
+                        const monthDiff = (targetDate.getFullYear() - startDate.getFullYear()) * 12 + (targetDate.getMonth() - startDate.getMonth());
+                        return monthDiff % interval === 0;
+                    }
+                    return false;
+                }
+                return false;
+            };
 
-                    if (task.recurrence.type === 'daily') {
-                        if (diffDays % interval === 0) isInstanceIncluded = true;
-                    } else if (task.recurrence.type === 'weekly') {
-                        // 每週指定星期幾
-                        if (task.recurrence.daysOfWeek && task.recurrence.daysOfWeek.length > 0) {
-                            const dayOfWeek = targetDate.getDay();
-                            if (task.recurrence.daysOfWeek.includes(dayOfWeek)) isInstanceIncluded = true;
-                        } else {
-                            // 沒有指定星期幾，每 interval 週顯示一次
-                            const diffWeeks = Math.floor(diffDays / 7);
-                            if (diffDays % 7 === 0 && diffWeeks % interval === 0) isInstanceIncluded = true;
+            const hasCompletionBefore = (taskObj, targetDateStr, sinceDateStr) => {
+                if (!taskObj.completedHistory) return false;
+                const completedDates = Object.keys(taskObj.completedHistory).filter(d => taskObj.completedHistory[d]);
+                for (const d of completedDates) {
+                    if (d >= sinceDateStr && d < targetDateStr) return true;
+                }
+                return false;
+            };
+
+            let isNormalInstance = false;
+            if (task.type === 'scheduled') {
+                if (task.date === dateStr) isNormalInstance = true;
+            } else if (task.type === 'recurring') {
+                isNormalInstance = checkRecurrence(task, dateStr);
+            }
+
+            if (isNormalInstance) {
+                isInstanceIncluded = true;
+            } else {
+                if (task.isPersistent) {
+                    isInstanceIncluded = true;
+                } else if (task.isBadHabit) {
+                    if (!(task.completedHistory && task.completedHistory[dateStr])) {
+                        isInstanceIncluded = true;
+                    }
+                } else if (task.isMission) {
+                    if (task.type === 'scheduled') {
+                        if (dateStr > task.date) {
+                            if (!hasCompletionBefore(task, dateStr, task.date)) {
+                                isInstanceIncluded = true;
+                            }
+                        }
+                    } else if (task.type === 'recurring') {
+                        const startStr = task.recurrence.startDate || (task.createdAt ? task.createdAt.split('T')[0] : '1970-01-01');
+                        if (dateStr > startStr) {
+                             let pastD = null;
+                             const d = new Date(dateStr);
+                             for (let i = 1; i <= 365; i++) {
+                                 d.setDate(d.getDate() - 1);
+                                 const testStr = getLocalDateStr(d);
+                                 if (testStr < startStr) break;
+                                 if (checkRecurrence(task, testStr)) {
+                                     pastD = testStr;
+                                     break;
+                                 }
+                             }
+                             if (pastD) {
+                                 if (!hasCompletionBefore(task, dateStr, pastD)) {
+                                     isInstanceIncluded = true;
+                                 }
+                             }
                         }
                     }
                 }
@@ -270,7 +314,28 @@ function handleAddSubmit(e) {
 function toggleTask(taskId, dateStr, isChecked, event) {
     if (event) event.stopPropagation();
     const task = state.tasks.find(t => t.id == taskId);
-    if (!task) return;
+    
+    // 支援勾選甘特圖任務（從主頁或全部行程中）
+    if (!task) {
+        if (state.ganttSystem && state.ganttSystem.projects) {
+            let foundGantt = false;
+            state.ganttSystem.projects.forEach(proj => {
+                proj.parents.forEach(parent => {
+                    const child = parent.children.find(c => c.id == taskId);
+                    if (child) {
+                        child.completed = isChecked;
+                        foundGantt = true;
+                    }
+                });
+            });
+            if (foundGantt) {
+                saveState();
+                renderStartPage();
+                return;
+            }
+        }
+        return;
+    }
 
     if (!task.completedHistory) task.completedHistory = {};
     const wasChecked = !!task.completedHistory[dateStr]; // 之前的狀態
@@ -406,10 +471,16 @@ function createTaskEl(task, dateStr, showDate = false) {
             </div>
         </div>
         <div class="task-actions">
-            <button onclick="event.stopPropagation(); openEditModal(state.tasks.find(t=>t.id==${task.id}), '${dateStr}')" class="btn-icon">✏️</button>
-            <button onclick="event.stopPropagation(); openDeleteModal(state.tasks.find(t=>t.id==${task.id}), '${dateStr}')" class="btn-icon">🗑️</button>
+            <button class="btn-icon btn-edit-task">✏️</button>
+            <button class="btn-icon btn-delete-task">🗑️</button>
         </div>
     `;
+
+    const editBtn = el.querySelector('.btn-edit-task');
+    if (editBtn) editBtn.onclick = (e) => { e.stopPropagation(); openEditModal(task, dateStr); };
+    
+    const deleteBtn = el.querySelector('.btn-delete-task');
+    if (deleteBtn) deleteBtn.onclick = (e) => { e.stopPropagation(); openDeleteModal(task, dateStr); };
 
     // 甘特圖任務加上特殊標記（企劃）
     if (task.isGantt) {
