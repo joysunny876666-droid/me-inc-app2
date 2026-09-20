@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>v4.0 數據清理工具</title>
+    <style>
+        body {
+            font-family: 'Microsoft JhengHei', sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #0d1117;
+            color: #c9d1d9;
+        }
+        .container {
+            background: #161b22;
+            padding: 30px;
+            border-radius: 12px;
+            border: 1px solid #30363d;
+        }
+        h1 {
+            color: #58a6ff;
+            margin-bottom: 10px;
+        }
+        .warning {
+            background: rgba(248, 81, 73, 0.1);
+            border: 1px solid #f85149;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .info {
+            background: rgba(88, 166, 255, 0.1);
+            border: 1px solid #58a6ff;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        button {
+            background: #238636;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #2ea043;
+        }
+        button.danger {
+            background: #da3633;
+        }
+        button.danger:hover {
+            background: #f85149;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            background: #0d1117;
+            border-radius: 8px;
+            border: 1px solid #30363d;
+            font-family: monospace;
+            font-size: 14px;
+            display: none;
+        }
+        .step {
+            margin: 15px 0;
+            padding: 15px;
+            background: #0d1117;
+            border-radius: 8px;
+            border-left: 4px solid #58a6ff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🛠️ v4.0 數據清理工具</h1>
+        <p style="color: #8b949e;">此工具可以幫助您清理舊的任務數據，解決「修改日期後仍出現在當天」的問題。</p>
+
+        <div class="warning">
+            <strong>⚠️ 重要提示</strong>
+            <ul>
+                <li>使用前請先<strong>備份您的數據</strong>（從主程式的「數據統計」頁面導出）</li>
+                <li>清理操作無法撤銷</li>
+                <li>建議在清理前先關閉主程式</li>
+            </ul>
+        </div>
+
+        <div class="info">
+            <strong>📋 清理步驟</strong>
+            <div class="step">
+                <strong>步驟 1：檢查數據</strong>
+                <p>先查看目前有多少任務數據</p>
+                <button onclick="checkData()">檢查數據</button>
+            </div>
+
+            <div class="step">
+                <strong>步驟 2：清理重複任務的 exceptions</strong>
+                <p>清除所有重複任務中標記為「已刪除」的日期（exceptions = true）</p>
+                <button onclick="cleanExceptions()">清理 Exceptions</button>
+            </div>
+
+            <div class="step">
+                <strong>步驟 3：刪除已結束的舊重複任務</strong>
+                <p>刪除 endDate 早於今天的重複任務</p>
+                <button onclick="cleanOldRecurring()">刪除舊重複任務</button>
+            </div>
+
+            <div class="step">
+                <strong>步驟 4：完全清空（危險操作）</strong>
+                <p>刪除所有任務數據，重新開始</p>
+                <button class="danger" onclick="clearAllData()">⚠️ 完全清空</button>
+            </div>
+        </div>
+
+        <div id="result" class="result"></div>
+    </div>
+
+    <script>
+        const STORAGE_KEY = 'meinc_state';
+
+        function getState() {
+            const stored = localStorage.getItem(STORAGE_KEY);
+            if (!stored) {
+                return null;
+            }
+            return JSON.parse(stored);
+        }
+
+        function saveState(state) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        }
+
+        function showResult(message, isError = false) {
+            const result = document.getElementById('result');
+            result.style.display = 'block';
+            result.style.borderColor = isError ? '#da3633' : '#238636';
+            result.innerHTML = message;
+        }
+
+        function checkData() {
+            const state = getState();
+            if (!state) {
+                showResult('❌ 找不到數據！請確認主程式已經使用過。', true);
+                return;
+            }
+
+            const taskCount = state.tasks ? state.tasks.length : 0;
+            const recurringCount = state.tasks ? state.tasks.filter(t => t.type === 'recurring').length : 0;
+            const scheduledCount = state.tasks ? state.tasks.filter(t => t.type === 'scheduled').length : 0;
+
+            let exceptionsCount = 0;
+            if (state.tasks) {
+                state.tasks.forEach(t => {
+                    if (t.exceptions) {
+                        exceptionsCount += Object.keys(t.exceptions).length;
+                    }
+                });
+            }
+
+            showResult(`
+📊 數據統計：
+- 總任務數：${taskCount}
+- 重複任務：${recurringCount}
+- 單次任務：${scheduledCount}
+- Exception 記錄數：${exceptionsCount}
+- 股價：${state.stockPrice?.toFixed(2) || '未知'}
+- 歷史記錄：${state.history?.length || 0} 天
+            `);
+        }
+
+        function cleanExceptions() {
+            const state = getState();
+            if (!state || !state.tasks) {
+                showResult('❌ 找不到數據！', true);
+                return;
+            }
+
+            let cleanedCount = 0;
+            state.tasks.forEach(task => {
+                if (task.exceptions) {
+                    const before = Object.keys(task.exceptions).length;
+                    // 只保留 exception 是物件的（覆蓋屬性），刪除 exception = true 的（已刪除標記）
+                    Object.keys(task.exceptions).forEach(key => {
+                        if (task.exceptions[key] === true) {
+                            delete task.exceptions[key];
+                            cleanedCount++;
+                        }
+                    });
+                }
+            });
+
+            saveState(state);
+            showResult(`
+✅ 清理完成！
+- 已清理 ${cleanedCount} 個「已刪除」標記
+- 請重新載入主程式查看效果
+            `);
+        }
+
+        function cleanOldRecurring() {
+            const state = getState();
+            if (!state || !state.tasks) {
+                showResult('❌ 找不到數據！', true);
+                return;
+            }
+
+            const today = new Date().toISOString().split('T')[0];
+            const before = state.tasks.length;
+
+            state.tasks = state.tasks.filter(task => {
+                if (task.type === 'recurring' && task.recurrence && task.recurrence.endDate) {
+                    // 刪除結束日期早於今天的重複任務
+                    return task.recurrence.endDate >= today;
+                }
+                return true;
+            });
+
+            const after = state.tasks.length;
+            const deleted = before - after;
+
+            saveState(state);
+            showResult(`
+✅ 清理完成！
+- 刪除了 ${deleted} 個已結束的重複任務
+- 剩餘任務數：${after}
+- 請重新載入主程式查看效果
+            `);
+        }
+
+        function clearAllData() {
+            if (!confirm('⚠️ 確定要刪除所有任務數據嗎？\n\n此操作無法撤銷！\n\n建議先備份數據。')) {
+                return;
+            }
+
+            if (!confirm('⚠️ 再次確認：真的要完全清空所有數據嗎？')) {
+                return;
+            }
+
+            const state = getState();
+            if (state) {
+                // 保留股價和歷史，只清空任務
+                state.tasks = [];
+                saveState(state);
+                showResult(`
+✅ 已清空所有任務！
+- 保留股價：${state.stockPrice?.toFixed(2)}
+- 保留歷史記錄
+- 請重新載入主程式
+                `);
+            } else {
+                showResult('❌ 找不到數據！', true);
+            }
+        }
+    </script>
+</body>
+</html>

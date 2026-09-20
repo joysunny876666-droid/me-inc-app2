@@ -33,28 +33,21 @@
         <!-- Start View (Dashboard) -->
         <div id="startView" class="view active">
             <header class="header">
-                <div class="logo">Me Inc. <span style="font-size: 0.6rem; opacity: 0.3;">v4.4</span></div>
-                
-                <div class="current-price-container" style="display: flex; align-items: center; gap: 16px;">
-                    <div>
-                        <span class="price-label">當前股價</span>
-                        <h1 id="currentPrice" class="price-value" style="display: inline-block; margin-right: 8px;">100.00</h1>
-                        <span id="priceChange" class="price-change">+0.00%</span>
-                    </div>
-                    <div style="display: flex; flex-direction: column; gap: 4px;">
-                        <button id="btnManualDownload" class="btn-secondary" style="font-size: 0.8rem; padding: 4px 8px;">📥 下載雲端</button>
-                        <button id="btnManualUpload" class="btn-secondary" style="font-size: 0.8rem; padding: 4px 8px;">📤 覆寫雲端</button>
-                    </div>
+                <div class="logo">Me Inc. <span style="font-size: 0.6rem; opacity: 0.3;">v3.6</span></div>
+                <div class="current-price-container">
+                    <span class="price-label">當前股價</span>
+                    <h1 id="currentPrice" class="price-value">100.00</h1>
+                    <span id="priceChange" class="price-change">+0.00%</span>
                 </div>
 
                 <!-- Search Bar -->
                 <div class="search-container"
-                    style="display: flex; gap: 8px; align-items: center;">
+                    style="margin-top: 16px; display: flex; justify-content: center; gap: 8px;">
                     <button id="navGanttBtn" class="btn-secondary"
                         style="padding: 8px 16px; font-size: 0.9rem; margin-right: 4px;">甘特圖</button>
                     <button id="navAccountingBtn" class="btn-secondary"
                         style="padding: 8px 16px; font-size: 0.9rem;">記帳</button>
-                    <input type="text" id="searchDateInput" placeholder="輸入日期或關鍵字..." style="padding: 8px; width: 150px;">
+                    <input type="date" id="searchDateInput" style="padding: 8px; width: auto;">
                     <button id="searchBtn" class="btn-primary" style="padding: 8px 16px; font-size: 0.9rem;">搜尋</button>
                 </div>
             </header>
@@ -74,17 +67,15 @@
                         <canvas id="ganttChart"></canvas>
                     </div>
 
-                    <div class="chart-container daily-progress-chart" id="dailyProgressContainer" style="margin-top: 12px;"></div>
-                </section>
+                    <nav class="main-nav"
+                        style="margin: 20px 0; position: static; width: auto; padding: 0; background: transparent; border: none;">
+                        <button id="navDataBtn" class="nav-btn btn-secondary">數據</button>
+                        <button id="navAddBtn" class="nav-btn btn-primary">新增選項</button>
+                        <button id="navScheduleBtn" class="nav-btn btn-secondary">每日行程</button>
+                    </nav>
 
-                <nav class="main-nav" style="margin: 20px 0; position: static; width: auto; padding: 0; background: transparent; border: none; flex-direction: row; justify-content: center;">
-                    <button id="navDataBtn" class="nav-btn btn-secondary">數據</button>
-                    <button id="navAddBtn" class="nav-btn btn-primary">新增選項</button>
-                    <button id="navScheduleBtn" class="nav-btn btn-secondary">每日行程</button>
-                </nav>
-
-                <!-- Tasks Section (3 Columns) -->
-                <section class="tasks-section">
+                    <!-- Tasks Section (3 Columns) -->
+                    <section class="tasks-section">
                         <!-- 1. Daily Routine (Left) -->
                         <div class="tasks-column">
                             <div class="column-header">
@@ -111,16 +102,6 @@
                                 <h2>重要事項</h2>
                             </div>
                             <div id="importantTaskList" class="task-list">
-                                <!-- JS Injected -->
-                            </div>
-                        </div>
-
-                        <!-- 4. Bad Habits (Rightmost) -->
-                        <div class="tasks-column tasks-bad-habit">
-                            <div class="column-header" style="color: var(--accent-red);">
-                                <h2>扣分項目</h2>
-                            </div>
-                            <div id="badHabitTaskList" class="task-list">
                                 <!-- JS Injected -->
                             </div>
                         </div>
@@ -184,19 +165,6 @@
                                 </select>
                             </div>
                         </div>
-                        <!-- BUG-02 修復: 新增星期選擇器 -->
-                        <div id="recurrenceWeekDays" class="form-group hidden">
-                            <label>指定星期（可複選）</label>
-                            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                                <label style="margin:0;"><input type="checkbox" name="recurrenceDay" value="1"> 一</label>
-                                <label style="margin:0;"><input type="checkbox" name="recurrenceDay" value="2"> 二</label>
-                                <label style="margin:0;"><input type="checkbox" name="recurrenceDay" value="3"> 三</label>
-                                <label style="margin:0;"><input type="checkbox" name="recurrenceDay" value="4"> 四</label>
-                                <label style="margin:0;"><input type="checkbox" name="recurrenceDay" value="5"> 五</label>
-                                <label style="margin:0;"><input type="checkbox" name="recurrenceDay" value="6"> 六</label>
-                                <label style="margin:0;"><input type="checkbox" name="recurrenceDay" value="0"> 日</label>
-                            </div>
-                        </div>
                         <div class="form-group">
                             <label>開始日期</label>
                             <input type="date" id="recurrenceStartDate">
@@ -226,21 +194,6 @@
                         <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                             <input type="checkbox" id="isMission" style="width: auto;">
                             <span>任務性 (未完成即持續出現)</span>
-                        </label>
-                    </div>
-
-                    <!-- BUG-04 修復: 新增壞習慣與持續性勾選框 -->
-                    <div class="form-group">
-                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                            <input type="checkbox" id="isBadHabit" style="width: auto;">
-                            <span>壞習慣 (每次觸發扣分，可重複)</span>
-                        </label>
-                    </div>
-
-                    <div class="form-group">
-                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                            <input type="checkbox" id="isPersistent" style="width: auto;">
-                            <span>持續性 (可重複加分)</span>
                         </label>
                     </div>
 
@@ -345,17 +298,6 @@
                     <!-- Table injected via JS -->
                 </div>
 
-                <div class="column-header" style="margin-top:30px; text-align:left;">
-                    <h2 style="font-size: 1.1rem;">資料同步與備份</h2>
-                </div>
-                <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 10px;">
-                    <div style="display: flex; gap: 10px;">
-                        <button id="exportLocalDataBtn" class="btn-secondary" style="flex: 1;">💾 匯出本機備份</button>
-                        <button type="button" id="importLocalDataBtn" class="btn-secondary" style="flex: 1;">📂 匯入本機備份</button>
-                    </div>
-                    <input type="file" id="importFileInput" accept=".txt,.json" style="display: none;">
-                </div>
-
                 <div class="form-actions-page" style="margin-top: 30px;">
                     <button type="button" id="bottomBackFromDataBtn" class="btn-back">上一頁</button>
                 </div>
@@ -423,76 +365,10 @@
                         </div>
                     </div>
 
-                    <!-- BUG-05 修復: 新增分數欄位 -->
-                    <div class="form-group">
-                        <label for="editScore">分數</label>
-                        <input type="number" id="editScore" step="0.1">
-                    </div>
-
-                    <!-- BUG-05 修復: 新增重要程度欄位 -->
-                    <div class="form-group">
-                        <label for="editImportance">重要程度</label>
-                        <select id="editImportance">
-                            <option value="critical">重要</option>
-                            <option value="high">還好</option>
-                            <option value="medium">輕微</option>
-                            <option value="low">不重要</option>
-                            <option value="daily">日常</option>
-                        </select>
-                    </div>
-
-                    <!-- BUG-05 修復: 重複行程設定 -->
-                    <div class="form-group">
-                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                            <input type="checkbox" id="editIsRecurring" style="width: auto;">
-                            <span>重複行程</span>
-                        </label>
-                    </div>
-                    <div id="editRecurringOptions" class="dynamic-group hidden">
-                        <div class="form-group">
-                            <label>重複設定</label>
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <span>每</span>
-                                <input type="number" id="editRecurrenceInterval" value="1" min="1" style="width: 60px; padding: 8px;">
-                                <select id="editRecurrenceType" style="flex: 1;">
-                                    <option value="daily">日</option>
-                                    <option value="weekly">週</option>
-                                    <option value="monthly">月</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div id="editRecurrenceWeekDays" class="form-group hidden">
-                            <label>指定星期（可複選）</label>
-                            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                                <label style="margin:0;"><input type="checkbox" name="editRecurrenceDay" value="1"> 一</label>
-                                <label style="margin:0;"><input type="checkbox" name="editRecurrenceDay" value="2"> 二</label>
-                                <label style="margin:0;"><input type="checkbox" name="editRecurrenceDay" value="3"> 三</label>
-                                <label style="margin:0;"><input type="checkbox" name="editRecurrenceDay" value="4"> 四</label>
-                                <label style="margin:0;"><input type="checkbox" name="editRecurrenceDay" value="5"> 五</label>
-                                <label style="margin:0;"><input type="checkbox" name="editRecurrenceDay" value="6"> 六</label>
-                                <label style="margin:0;"><input type="checkbox" name="editRecurrenceDay" value="0"> 日</label>
-                            </div>
-                        </div>
-                    </div>
-
                     <div class="form-group">
                         <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                             <input type="checkbox" id="editIsMission" style="width: auto;">
                             <span>任務性 (未完成即持續出現)</span>
-                        </label>
-                    </div>
-
-                    <!-- BUG-05 修復: 壞習慣與持續性 -->
-                    <div class="form-group">
-                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                            <input type="checkbox" id="editIsBadHabit" style="width: auto;">
-                            <span>壞習慣</span>
-                        </label>
-                    </div>
-                    <div class="form-group">
-                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                            <input type="checkbox" id="editIsPersistent" style="width: auto;">
-                            <span>持續性 (可重複加分)</span>
                         </label>
                     </div>
 
@@ -613,47 +489,6 @@
                     <div class="form-actions-page">
                         <button type="submit" class="btn-confirm">儲存</button>
                         <button type="button" id="cancelAccEntryBtn" class="btn-cancel">取消</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-
-        <!-- BUG-03 修復: 記帳編輯交易 Modal -->
-        <div id="accountingEditTransactionModal" class="modal hidden">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>編輯記帳記錄</h3>
-                    <button id="closeAccEditBtn" class="close-btn">&times;</button>
-                </div>
-                <form id="accountingEditTransactionForm" class="form-content" style="padding: 0; margin-top: 12px; gap: 12px;">
-                    <input type="hidden" id="accEditId">
-                    <div class="form-group">
-                        <label for="accEditAmount">金額 (正數為收入，負數為支出)</label>
-                        <input type="number" id="accEditAmount" required step="0.01" placeholder="例如: 500 或 -100">
-                    </div>
-                    <div class="form-group">
-                        <label for="accEditName">項目名稱 (可不填)</label>
-                        <input type="text" id="accEditName" placeholder="例如: 某某店午餐">
-                    </div>
-                    <div class="form-group">
-                        <label for="accEditCategory">選擇類別</label>
-                        <select id="accEditCategory">
-                            <!-- Injected via JS -->
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="accEditBank">選擇銀行</label>
-                        <select id="accEditBank">
-                            <!-- Injected via JS -->
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="accEditDate">日期</label>
-                        <input type="date" id="accEditDate" required>
-                    </div>
-                    <div class="form-actions-page">
-                        <button type="submit" class="btn-confirm">儲存變更</button>
-                        <button type="button" id="cancelAccEditBtn" class="btn-cancel">取消</button>
                     </div>
                 </form>
             </div>
@@ -941,20 +776,7 @@
             </div>
         </div>
 
-    <!-- 共用核心系統 -->
-    <script src="共用核心系統/程式碼/00_state.js?v=7.9"></script>
-    <script src="共用核心系統/程式碼/01_cloud.js?v=7.9"></script>
-
-    <!-- 各子系統 -->
-    <script src="股價系統/程式碼/03_stock.js?v=7.9"></script>
-    <script src="記帳系統/程式碼/04_accounting.js?v=7.9"></script>
-    <script src="甘特圖系統/程式碼/05_gantt.js?v=7.9"></script>
-
-    <!-- 共用核心系統（需要在子系統之後載入） -->
-    <script src="共用核心系統/程式碼/02_tasks.js?v=7.9"></script>
-    <script src="共用核心系統/程式碼/06_calendar.js?v=7.9"></script>
-    <script src="共用核心系統/程式碼/07_ui.js?v=7.9"></script>
-    <script src="共用核心系統/程式碼/08_flowchart_v4.js?v=7.9"></script>
+        <script src="app.js"></script>
 </body>
 
 </html>

@@ -1,0 +1,1443 @@
+﻿diff --git a/app.js b/app.js
+index 7f55704..87b6f49 100644
+--- a/app.js
++++ b/app.js
+@@ -312,6 +312,7 @@ function init() {
+         setupEditListeners();
+         setupAccountingListeners();
+         setupGanttListeners(); // Integrated directly
++        setupTimeRangeModalListeners(); // v4.0: flowchart time range modal
+ 
+         // Auto-refresh (every minute)
+         setInterval(() => {
+@@ -885,16 +886,17 @@ function setupEventListeners() {
+     // Add Form Toggles
+     els.addForm.inputs.isRecurringRadios.forEach(radio => {
+         radio.addEventListener('change', (e) => {
++            const dateFieldLabel = document.getElementById('dateFieldLabel');
+             if (e.target.value === 'yes') {
+-                els.addForm.inputs.recurrenceGroup.classList.remove('hidden');
+-                els.addForm.inputs.dateGroup.classList.add('hidden');
++                if (els.addForm.inputs.recurrenceGroup) els.addForm.inputs.recurrenceGroup.classList.remove('hidden');
++                if (dateFieldLabel) dateFieldLabel.textContent = '???交?';
+                 // Default Start Date to Today if empty
+-                if (!els.addForm.inputs.recurrenceStartDate.value) {
+-                    els.addForm.inputs.recurrenceStartDate.value = getLocalDateStr();
++                if (els.addForm.inputs.dateInput && !els.addForm.inputs.dateInput.value) {
++                    els.addForm.inputs.dateInput.value = getLocalDateStr();
+                 }
+             } else {
+-                els.addForm.inputs.recurrenceGroup.classList.add('hidden');
+-                els.addForm.inputs.dateGroup.classList.remove('hidden');
++                if (els.addForm.inputs.recurrenceGroup) els.addForm.inputs.recurrenceGroup.classList.add('hidden');
++                if (dateFieldLabel) dateFieldLabel.textContent = '?交?';
+             }
+         });
+     });
+@@ -1221,7 +1223,7 @@ const VIEW_MAP = {
+     'data': renderDataView,
+     'accounting': renderAccountingView,
+     'ganttMain': renderGanttMainPage,
+-    'add': () => { }, // No specific render fn
++    'add': () => { renderTodayFlowchart(); }, // v4.0: render flowchart on add view
+     'ganttAddProject': () => { },
+     'ganttProjectDetail': () => { }
+ };
+@@ -1562,7 +1564,6 @@ function renderAccountingBankDetail() {
+             </div>
+         `).join('');
+     }
+-
+     if (incomeList) {
+         const incomes = state.accounting.transactions.filter(t => t.amount > 0).sort((a, b) => b.date.localeCompare(a.date));
+         incomeList.innerHTML = incomes.map(t => {
+@@ -1591,41 +1592,81 @@ function renderAccountingExpenseCalendar() {
+ 
+     if (ex.monthLabel) ex.monthLabel.textContent = `${year}撟?${month + 1}?;
+     ex.calendarGrid.innerHTML = '';
+-
+-    const firstDay = new Date(year, month, 1).getDay();
+-    const daysInMonth = new Date(year, month + 1, 0).getDate();
++    ex.calendarGrid.style.gridTemplateColumns = 'repeat(8, 1fr)';
+ 
+     // Headers
+-    ['??, '銝', '鈭?, '銝?, '??, '鈭?, '??].forEach(day => {
++    ['銝', '鈭?, '銝?, '??, '鈭?, '??, '??, '?梁蜇?臬'].forEach((day, index) => {
+         const d = document.createElement('div');
+         d.className = 'calendar-day-header';
+         d.textContent = day;
++        if (index === 7) d.style.color = 'var(--accent-red)';
+         ex.calendarGrid.appendChild(d);
+     });
+ 
+-    for (let i = 0; i < firstDay; i++) {
+-        ex.calendarGrid.appendChild(document.createElement('div'));
+-    }
++    let startDate = new Date(year, month, 1);
++    let dayOfWeek = startDate.getDay(); // 0 is Sunday, 1 is Monday
++    let offset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
++    startDate.setDate(startDate.getDate() - offset);
+ 
+-    for (let i = 1; i <= daysInMonth; i++) {
+-        const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+-        const dayTotal = state.accounting.transactions
+-            .filter(t => t.date === dStr && t.amount < 0)
+-            .reduce((acc, t) => acc + Math.abs(t.amount), 0);
++    let currentDate = new Date(startDate);
++    let endDate = new Date(year, month + 1, 0);
+ 
+-        const cell = document.createElement('div');
+-        cell.className = 'calendar-day';
+-        cell.innerHTML = `<span class="day-number">${i}</span>`;
+-        if (dayTotal > 0) {
+-            const amountLabel = document.createElement('div');
+-            amountLabel.style.fontSize = '0.7rem';
+-            amountLabel.style.color = 'var(--accent-red)';
+-            amountLabel.textContent = dayTotal.toLocaleString();
+-            cell.appendChild(amountLabel);
++    while (currentDate <= endDate || currentDate.getDay() !== 1) {
++        let weekTotal = 0;
++        let weekDays = [];
++        for (let i = 0; i < 7; i++) {
++            weekDays.push(new Date(currentDate));
++            currentDate.setDate(currentDate.getDate() + 1);
+         }
+ 
+-        cell.onclick = () => showAccountingDayDetail(dStr);
+-        ex.calendarGrid.appendChild(cell);
++        weekDays.forEach(d => {
++            const isCurrentMonth = d.getMonth() === month;
++            const dStr = getLocalDateStr(d);
++            const dayTotal = state.accounting.transactions
++                .filter(t => t.date === dStr && t.amount < 0)
++                .reduce((acc, t) => acc + Math.abs(t.amount), 0);
++
++            weekTotal += dayTotal;
++
++            const cell = document.createElement('div');
++            cell.className = 'calendar-day';
++            
++            if (!isCurrentMonth) {
++                cell.style.opacity = '0.3';
++            }
++            
++            cell.innerHTML = `<span class="day-number">${d.getDate()}</span>`;
++            if (dayTotal > 0) {
++                const amountLabel = document.createElement('div');
++                amountLabel.style.fontSize = '0.7rem';
++                amountLabel.style.color = 'var(--accent-red)';
++                amountLabel.textContent = dayTotal.toLocaleString();
++                cell.appendChild(amountLabel);
++            }
++
++            cell.onclick = () => showAccountingDayDetail(dStr);
++            ex.calendarGrid.appendChild(cell);
++        });
++
++        // Weekly total cell
++        const totalCell = document.createElement('div');
++        totalCell.className = 'calendar-day';
++        totalCell.style.background = 'rgba(255, 255, 255, 0.05)';
++        totalCell.style.border = '1px dashed var(--border-color)';
++        totalCell.style.display = 'flex';
++        totalCell.style.justifyContent = 'center';
++        totalCell.style.alignItems = 'center';
++        totalCell.style.flexDirection = 'column';
++        totalCell.style.cursor = 'default';
++        
++        const totalSpan = document.createElement('span');
++        totalSpan.style.color = 'var(--accent-red)';
++        totalSpan.style.fontWeight = 'bold';
++        totalSpan.style.fontSize = '0.9rem';
++        totalSpan.textContent = weekTotal > 0 ? weekTotal.toLocaleString() : '-';
++        
++        totalCell.appendChild(totalSpan);
++        ex.calendarGrid.appendChild(totalCell);
+     }
+ }
+ 
+@@ -2364,6 +2405,10 @@ function fixDataAnomalies() {
+         }
+     });
+ 
++    if (cleanupAllDuplicateTasks()) {
++        changed = true;
++    }
++
+     if (changed) {
+         saveState();
+         console.log("Data anomalies fixed and state saved.");
+@@ -2438,7 +2483,7 @@ function renderStartPage() {
+     // Point Tasks (No end time) -> List
+ 
+     // 1. Daily Routine (Recurring Today)
+-    let dailyRoutineTasks = todaysTasks.filter(t => t.type === 'recurring');
++    let dailyRoutineTasks = todaysTasks.filter(t => t.type === 'recurring' && t.importance === 'daily');
+     // Recurring tasks ALWAYS show in the daily list for now to ensure visibility
+     dailyRoutineTasks.sort(timeSort);
+ 
+@@ -2447,7 +2492,7 @@ function renderStartPage() {
+         if (dailyRoutineTasks.length === 0) {
+             els.dashboard.dailyList.innerHTML = '<div style="text-align:center; color:var(--text-secondary); padding:10px;">隞?∩?銵???/div>';
+         } else {
+-            dailyRoutineTasks.forEach(task => els.dashboard.dailyList.appendChild(createTaskEl(task, todayStr, false)));
++            dailyRoutineTasks.forEach(task => els.dashboard.dailyList.appendChild(createTaskEl(task, todayStr, true)));
+         }
+     }
+ 
+@@ -2467,32 +2512,46 @@ function renderStartPage() {
+         if (combinedTasks.length === 0) {
+             els.dashboard.allList.innerHTML = '<div style="text-align:center; color:var(--text-secondary); padding:10px;">隞?⊥?蝔???/div>';
+         } else {
+-            combinedTasks.forEach(task => els.dashboard.allList.appendChild(createTaskEl(task, todayStr, false)));
++            combinedTasks.forEach(task => els.dashboard.allList.appendChild(createTaskEl(task, todayStr, true)));
+         }
+     }
+ 
+     // 3. Important (Critical Global)
+-    let criticalTasks = state.tasks.filter(t => {
+-        if (t.importance !== 'critical') return false;
+-
+-        // Exclude Ranged tasks from Important List
+-        if (t.time && t.endTime) return false;
+-
+-        // Hide scheduled tasks from past dates (but KEEP missions, persistent, and bad habits)
+-        if (t.type === 'scheduled' && !t.isMission && !t.isPersistent && !t.isBadHabit && t.date < todayStr) return false;
++    let criticalTasks = state.tasks.reduce((acc, t) => {
++        if (t.importance !== 'critical') return acc;
++        if (t.time && t.endTime) return acc;
++        
++        let targetDate = (t.type === 'recurring' || t.isPersistent || t.isMission || t.isBadHabit) ? todayStr : t.date;
++        
++        if (t.exceptions && t.exceptions[targetDate] === true) return acc;
+ 
+-        // Hide missions completed before today
+-        if (t.isMission) {
+-            const completedDates = t.completedHistory ? Object.keys(t.completedHistory).filter(d => t.completedHistory[d]) : [];
++        let effectiveTask = { ...t };
++        if (t.exceptions && typeof t.exceptions[targetDate] === 'object') {
++            Object.assign(effectiveTask, t.exceptions[targetDate]);
++        }
++        
++        if (effectiveTask.type === 'scheduled' && !effectiveTask.isMission && !effectiveTask.isPersistent && !effectiveTask.isBadHabit && effectiveTask.date < todayStr) return acc;
++        
++        if (effectiveTask.isMission) {
++            const completedDates = effectiveTask.completedHistory ? Object.keys(effectiveTask.completedHistory).filter(d => effectiveTask.completedHistory[d]) : [];
+             const firstCompletionDate = completedDates.length > 0 ? completedDates.sort()[0] : null;
+-            if (firstCompletionDate && firstCompletionDate < todayStr) return false;
++            if (firstCompletionDate && firstCompletionDate < todayStr) return acc;
+         }
++        
++        if (effectiveTask.isBadHabit && effectiveTask.completedHistory && effectiveTask.completedHistory[todayStr]) return acc;
++        
++        if (effectiveTask.time && effectiveTask.endTime) return acc;
++        if (effectiveTask.importance !== 'critical') return acc;
+ 
+-        // Hide bad habits completed today (per user request)
+-        if (t.isBadHabit && t.completedHistory && t.completedHistory[todayStr]) return false;
+-
+-        return true;
+-    });
++        // ??鈭?隞颱?銝憭拙??停銝＊蝷?(Important tasks once completed on any day will not show up)
++        if (effectiveTask.completedHistory) {
++            const completedDates = Object.keys(effectiveTask.completedHistory).filter(d => effectiveTask.completedHistory[d]);
++            if (completedDates.length > 0) return acc;
++        }
++        
++        acc.push(effectiveTask);
++        return acc;
++    }, []);
+ 
+     criticalTasks.sort((a, b) => {
+         const dateA = (a.type === 'recurring' || a.isPersistent || a.isMission || a.isBadHabit) ? todayStr : (a.date || '9999-99-99');
+@@ -2724,8 +2783,10 @@ function createTaskEl(task, dateStr, showDateLabel) {
+ 
+     let dateDisplay = '';
+     if (showDateLabel) {
+-        if (task.type === 'recurring') {
+-            dateDisplay = `<span style="margin-right:4px; color:var(--accent-blue); font-size:0.7rem; border:1px solid var(--accent-blue); padding:1px 3px; border-radius:3px;">??</span>`;
++        if (task.type === 'recurring' && task.recurrence) {
++            // v4.0: Show start date | interval | next date
++            const recInfo = getRecurrenceDisplayInfo(task, dateStr);
++            dateDisplay = `<span style="margin-right:4px; color:var(--accent-blue); font-size:0.7rem; border:1px solid var(--accent-blue); padding:1px 4px; border-radius:3px; white-space:nowrap;">${recInfo}</span>`;
+         } else if (task.date) {
+             const d = new Date(task.date);
+             const mmdd = `${d.getMonth() + 1}/${d.getDate()}`;
+@@ -2734,7 +2795,7 @@ function createTaskEl(task, dateStr, showDateLabel) {
+     }
+ 
+     el.innerHTML = `
+-        <div class="task-check-wrapper" onclick="toggleTask(${task.id}, '${dateStr}', !${!!isCompleted}, event)">
++        <div class="task-check-wrapper" onclick="toggleTask('${task.id}', '${dateStr}', !${!!isCompleted}, event)">
+             <div class="task-checkbox">
+                 ${isCompleted ? '?? : ''}
+             </div>
+@@ -2779,13 +2840,14 @@ function toggleTask(taskId, dateStr, isChecked, event) {
+         if (state.ganttSystem && state.ganttSystem.projects) {
+             let foundGantt = false;
+             state.ganttSystem.projects.forEach(proj => {
+-                proj.parents.forEach(parent => {
+-                    const child = parent.children.find(c => c.id == taskId);
+-                    if (child) {
+-                        child.completed = isChecked;
+-                        foundGantt = true;
+-                    }
+-                });
++                const item = findGanttItem(proj.parents, taskId);
++                if (item) {
++                     item.completed = isChecked;
++                     foundGantt = true;
++                     if (proj.parents.some(p => p.id == taskId)) {
++                         checkProjectCompletion(proj);
++                     }
++                }
+             });
+             if (foundGantt) {
+                 saveState();
+@@ -2871,8 +2933,32 @@ function toggleTask(taskId, dateStr, isChecked, event) {
+         }
+     } else {
+         task.completedHistory[dateStr] = isChecked;
++
++        // Sync completion state to Gantt item if this is a Gantt copy
++        if (task.ganttId && state.ganttSystem && state.ganttSystem.projects) {
++            state.ganttSystem.projects.forEach(proj => {
++                const item = findGanttItem(proj.parents, task.ganttId);
++                if (item) {
++                    item.completed = isChecked;
++                    if (proj.parents.some(p => p.id == task.ganttId)) {
++                        checkProjectCompletion(proj);
++                    }
++                }
++            });
++        }
+         
+-        // --- NEW: Handle Score Override for Toggle ---
++        // --- v4.0: If mission task is completed, end recurrence at this date ---
++        if (task.isMission && isChecked && task.type === 'recurring' && task.recurrence) {
++            task.recurrence.endDate = dateStr;
++        }
++        // If mission task is unchecked, restore recurrence (remove endDate if it was set to this date)
++        if (task.isMission && !isChecked && task.type === 'recurring' && task.recurrence) {
++            if (task.recurrence.endDate === dateStr) {
++                delete task.recurrence.endDate;
++            }
++        }
++
++        // --- Handle Score Override for Toggle ---
+         let effectiveScore = task.score;
+         if (task.exceptions && typeof task.exceptions[dateStr] === 'object') {
+             const override = task.exceptions[dateStr];
+@@ -3193,7 +3279,7 @@ function handleAddSubmit(e) {
+     const isRecurring = document.querySelector('input[name="isRecurring"]:checked').value === 'yes';
+     const recurrenceType = els.addForm.inputs.recurrenceType.value;
+     const recurrenceInterval = parseInt(els.addForm.inputs.recurrenceInterval.value) || 1;
+-    const recurrenceStartDate = els.addForm.inputs.recurrenceStartDate.value;
++    const recurrenceStartDate = els.addForm.inputs.dateInput ? els.addForm.inputs.dateInput.value : '';
+ 
+     // Get Weekdays
+     const recurrenceWeekDays = [];
+@@ -3267,9 +3353,8 @@ function handleAddSubmit(e) {
+     // Reset state
+     if (els.addForm.inputs.recurrenceGroup) els.addForm.inputs.recurrenceGroup.classList.add('hidden');
+     document.getElementById('recurrenceWeekDays').classList.add('hidden'); // Hide Weekdays
+-    if (els.addForm.inputs.dateGroup) {
+-        els.addForm.inputs.dateGroup.classList.remove('hidden');
+-    }
++    const dateFieldLabel = document.getElementById('dateFieldLabel');
++    if (dateFieldLabel) dateFieldLabel.textContent = '?交?';
+     const noRadio = document.querySelector('input[name="isRecurring"][value="no"]');
+     if (noRadio) noRadio.checked = true;
+ 
+@@ -3278,6 +3363,9 @@ function handleAddSubmit(e) {
+         els.addForm.inputs.isTimeRange.checked = false;
+         els.addForm.inputs.endTimeGroup.classList.add('hidden');
+     }
++
++    // Refresh flowchart sidebar
++    renderTodayFlowchart();
+ }
+ 
+ // --- Schedule Logic ---
+@@ -3432,16 +3520,26 @@ function initiateDelete(task, dateStr) {
+ 
+     if (isGantt) {
+         if (confirm('蝣箏?閬?斗迨????桀?嚗?)) {
+-            // Remove from Gantt System
++            let deleted = false;
+             state.ganttSystem.projects.forEach(proj => {
+-                proj.parents.forEach(parent => {
+-                    const idx = parent.children.findIndex(c => c.id === task.id);
+-                    if (idx !== -1) {
+-                        parent.children.splice(idx, 1);
+-                    }
+-                });
++                const pIdx = proj.parents.findIndex(p => p.id === task.id);
++                if (pIdx !== -1) {
++                    proj.parents.splice(pIdx, 1);
++                    deleted = true;
++                } else {
++                    proj.parents.forEach(parent => {
++                        if (parent.children) {
++                            const cIdx = parent.children.findIndex(c => c.id === task.id);
++                            if (cIdx !== -1) {
++                                parent.children.splice(cIdx, 1);
++                                deleted = true;
++                            }
++                        }
++                    });
++                }
+             });
+-            finishDelete();
++            if (deleted) finishDelete();
++            else { alert('?曆??啗府?'); finishDelete(); }
+         }
+     } else if (task.type === 'recurring') {
+         // Show Selection Modal
+@@ -3632,27 +3730,21 @@ function setupEditListeners() {
+                 taskToEdit = task;
+                 editOriginalDateVal = originalDate;
+ 
+-                // 憒??舫?銴遙????蝭?嚗??亙???-                if (task.type === 'recurring' || isRecSet) {
+-                    els.editScopeModal.el.classList.remove('hidden');
+-                } else {
+-                    applyPendingEditsToTask(task);
+-                    finishEdit();
+-                }
++                // v4.0: 霈?敺??典?隞??? (In v4.0, directly apply edits in-place to completely replace the old task)
++                applyPendingEditsToTask(task);
++                cleanupDuplicateTasks(task.name, editPendingData.name, task.id);
++                finishEdit();
+             } else {
+                 // Try Gantt... (Existing logic preserved below or merged)
+                 if (state.ganttSystem && state.ganttSystem.projects) {
+                     for (const proj of state.ganttSystem.projects) {
+-                        for (const parent of proj.parents) {
+-                            const child = findGanttItem(parent.children, taskId);
+-                            if (child) {
+-                                child.name = newName;
+-                                child.score = newScore;
+-                                // Gantt items don't strictly support recurrence in this app yet
+-                                finishEdit();
+-                                renderWeeklySchedule();
+-                                return;
+-                            }
++                        const item = findGanttItem(proj.parents, taskId);
++                        if (item) {
++                            item.name = newName;
++                            item.score = newScore;
++                            finishEdit();
++                            renderWeeklySchedule();
++                            return;
+                         }
+                     }
+                 }
+@@ -3703,48 +3795,151 @@ function applyPendingEditsToTask(task) {
+     }
+ }
+ 
++function cleanupDuplicateTasks(oldName, newName, keepId) {
++    try {
++        if (!state.tasks) return;
++        const keepTask = state.tasks.find(t => t.id === keepId);
++        if (!keepTask) return;
++
++        const cleanOld = (oldName || "").toString().trim().toLowerCase();
++        const cleanNew = (newName || "").toString().trim().toLowerCase();
++        const namesToClean = new Set([cleanOld, cleanNew]);
++
++        state.tasks = state.tasks.filter(t => {
++            if (t.id === keepId) return true;
++            const tName = (t.name || "").toString().trim().toLowerCase();
++            if (namesToClean.has(tName)) {
++                console.log(`Removing duplicate task "${t.name}" (ID: ${t.id}) to completely replace it.`);
++                if (t.completedHistory) {
++                    if (!keepTask.completedHistory) keepTask.completedHistory = {};
++                    Object.keys(t.completedHistory).forEach(d => {
++                        if (t.completedHistory[d]) {
++                            keepTask.completedHistory[d] = true;
++                        }
++                    });
++                }
++                return false;
++            }
++            return true;
++        });
++    } catch (err) {
++        console.error("Error in cleanupDuplicateTasks:", err);
++    }
++}
++
++function cleanupAllDuplicateTasks() {
++    try {
++        if (!state.tasks) return false;
++        
++        const groups = {};
++        state.tasks.forEach(t => {
++            const key = (t.name || "").toString().trim().toLowerCase();
++            if (!groups[key]) groups[key] = [];
++            groups[key].push(t);
++        });
++
++        let changed = false;
++
++        Object.keys(groups).forEach(key => {
++            if (!key) return; // skip empty task names
++            const list = groups[key];
++            if (list.length <= 1) return;
++
++            // Sort: Active recurring task first, then scheduled, then ones with end dates.
++            list.sort((a, b) => {
++                const aHasEnd = a.recurrence && a.recurrence.endDate;
++                const bHasEnd = b.recurrence && b.recurrence.endDate;
++                if (aHasEnd && !bHasEnd) return 1;
++                if (!aHasEnd && bHasEnd) return -1;
++                
++                const aIsRec = a.type === 'recurring';
++                const bIsRec = b.type === 'recurring';
++                if (aIsRec && !bIsRec) return -1;
++                if (!aIsRec && bIsRec) return 1;
++                
++                return b.id - a.id;
++            });
++
++            const keepTask = list[0];
++            const duplicates = list.slice(1);
++
++            console.log(`Auto-cleanup duplicates: Keeping task "${keepTask.name}" (ID: ${keepTask.id})`);
++
++            if (!keepTask.completedHistory) keepTask.completedHistory = {};
++            if (!keepTask.badHabitHistory) keepTask.badHabitHistory = {};
++
++            duplicates.forEach(dup => {
++                console.log(`Removing duplicate task "${dup.name}" (ID: ${dup.id})`);
++                if (dup.completedHistory) {
++                    Object.keys(dup.completedHistory).forEach(d => {
++                        if (dup.completedHistory[d]) {
++                            keepTask.completedHistory[d] = true;
++                        }
++                    });
++                }
++                if (dup.badHabitHistory) {
++                    Object.keys(dup.badHabitHistory).forEach(d => {
++                        if (dup.badHabitHistory[d]) {
++                            keepTask.badHabitHistory[d] = dup.badHabitHistory[d];
++                        }
++                    });
++                }
++                state.tasks = state.tasks.filter(t => t.id !== dup.id);
++                changed = true;
++            });
++        });
++
++        return changed;
++    } catch (err) {
++        console.error("Error in cleanupAllDuplicateTasks:", err);
++        return false;
++    }
++}
++
+ function updateRecurringSingle() {
+     const freshTask = state.tasks.find(t => t.id === taskToEdit.id);
+     if (!freshTask) return alert('Task not found (concurrency error)');
+ 
+-    // 1. Add exception to old (Using ORIGINAL Date)
+     if (!freshTask.exceptions) freshTask.exceptions = {};
+     if (Array.isArray(freshTask.exceptions)) {
+         const oldArr = freshTask.exceptions;
+         freshTask.exceptions = {};
+         oldArr.forEach(d => freshTask.exceptions[d] = true);
+     }
+-    freshTask.exceptions[editOriginalDateVal] = true;
+ 
+-    // 2. Create new Single Scheduled Task (Using NEW Date)
+-    const newTask = {
+-        ...taskToEdit, // taskToEdit has original values
+-        id: Date.now(),
+-        type: 'scheduled',
+-        recurrence: null,
+-        date: editPendingData.newDate,
+-        name: editPendingData.name,
+-        time: editPendingData.time,
+-        endTime: editPendingData.endTime,
+-        score: editPendingData.score,
+-        importance: editPendingData.importance,
+-        isMission: editPendingData.isMission,
+-        isPersistent: editPendingData.isPersistent,
+-        isBadHabit: editPendingData.isBadHabit,
+-        exceptions: {}, 
+-        completedHistory: {},
+-        badHabitHistory: {},
+-        penaltyHistory: {},
+-        createdAt: editPendingData.newDate
+-    };
+-
+-    if (editPendingData.newDate === editOriginalDateVal) {
+-        if (taskToEdit.completedHistory && taskToEdit.completedHistory[editOriginalDateVal]) {
+-            newTask.completedHistory[editPendingData.newDate] = true;
++    // 撠活?格活靽格雿 Exception ?拐辣摮嚗??撱箸隞餃???+    // 憒?靽格鈭??敹??刻??交?璅???true (?芷)嚗蒂?冽?交?撖怠?拐辣
++    if (editPendingData.newDate !== editOriginalDateVal) {
++        freshTask.exceptions[editOriginalDateVal] = true;
++        freshTask.exceptions[editPendingData.newDate] = {
++            name: editPendingData.name,
++            time: editPendingData.time,
++            endTime: editPendingData.endTime,
++            score: editPendingData.score,
++            importance: editPendingData.importance,
++            isMission: editPendingData.isMission,
++            isPersistent: editPendingData.isPersistent,
++            isBadHabit: editPendingData.isBadHabit,
++            date: editPendingData.newDate
++        };
++        // 頧宏閰脣甈∩遙??摰?蝝??+        if (freshTask.completedHistory && freshTask.completedHistory[editOriginalDateVal]) {
++            freshTask.completedHistory[editPendingData.newDate] = true;
++            delete freshTask.completedHistory[editOriginalDateVal];
+         }
++    } else {
++        freshTask.exceptions[editOriginalDateVal] = {
++            name: editPendingData.name,
++            time: editPendingData.time,
++            endTime: editPendingData.endTime,
++            score: editPendingData.score,
++            importance: editPendingData.importance,
++            isMission: editPendingData.isMission,
++            isPersistent: editPendingData.isPersistent,
++            isBadHabit: editPendingData.isBadHabit
++        };
+     }
+ 
+-    state.tasks.push(newTask);
+     els.editScopeModal.el.classList.add('hidden');
+     finishEdit();
+ }
+@@ -3760,7 +3955,43 @@ function updateRecurringFuture() {
+     yesterday.setDate(yesterday.getDate() - 1);
+     const yesterdayStr = getLocalDateStr(yesterday);
+ 
+-    freshTask.recurrence.endDate = yesterdayStr;
++    if (freshTask.recurrence) {
++        freshTask.recurrence.endDate = yesterdayStr;
++    }
++
++    // 蝜潭靘????(靘??拐辣??湔?箸?身摰?隞亥?????)
++    const inheritedExceptions = {};
++    if (freshTask.exceptions && !Array.isArray(freshTask.exceptions)) {
++        Object.keys(freshTask.exceptions).forEach(dateKey => {
++            if (dateKey >= editOriginalDateVal) {
++                const ex = freshTask.exceptions[dateKey];
++                if (ex === true) {
++                    inheritedExceptions[dateKey] = true;
++                } else if (typeof ex === 'object') {
++                    inheritedExceptions[dateKey] = {
++                        ...ex,
++                        name: editPendingData.name,
++                        time: editPendingData.time,
++                        endTime: editPendingData.endTime,
++                        score: editPendingData.score,
++                        importance: editPendingData.importance
++                    };
++                }
++                delete freshTask.exceptions[dateKey];
++            }
++        });
++    }
++
++    // 蝜潭甇瑕蝝??+    const inheritedCompleted = {};
++    if (freshTask.completedHistory) {
++        Object.keys(freshTask.completedHistory).forEach(dateKey => {
++            if (dateKey >= editOriginalDateVal) {
++                inheritedCompleted[dateKey] = freshTask.completedHistory[dateKey];
++                delete freshTask.completedHistory[dateKey];
++            }
++        });
++    }
+ 
+     // 2. Create new Recurring Task starting from NEW Date
+     const newTask = {
+@@ -3775,14 +4006,14 @@ function updateRecurringFuture() {
+         isPersistent: editPendingData.isPersistent,
+         isBadHabit: editPendingData.isBadHabit,
+         createdAt: editPendingData.newDate,
+-        exceptions: {},
++        exceptions: inheritedExceptions,
+         type: 'recurring',
+-        recurrence: {
++        recurrence: freshTask.recurrence ? {
+             ...freshTask.recurrence,
+             startDate: editPendingData.newDate,
+             endDate: null 
+-        },
+-        completedHistory: {}, 
++        } : null,
++        completedHistory: inheritedCompleted, 
+         penaltyHistory: {}
+     };
+ 
+@@ -3802,12 +4033,6 @@ function updateRecurringFuture() {
+ 
+     state.tasks.push(newTask);
+     els.editScopeModal.el.classList.add('hidden');
+-    applyPendingEditsToTask(freshTask); 
+-    // ^ Apply to freshTask so we don't lose the updates since we mutated it, wait, NO!
+-    // We SHOULD NOT apply pending edits to freshTask because freshTask is the old series!
+-    // So the previous applyPendingEditsToTask call here is wrong!
+-    // The newTask already gets the pending edits via the object literal above.
+-
+     finishEdit();
+ }
+ 
+@@ -3828,6 +4053,309 @@ function finishEdit() {
+     editPendingData = null;
+ }
+ 
++// =============================================================
++// --- v4.0: Flowchart & Recurrence Display Helpers ---
++// =============================================================
++
++/**
++ * Returns a formatted recurrence display string: "M/D | 瘥?N ??| 銝活: M/D"
++ */
++function getRecurrenceDisplayInfo(task, currentDateStr) {
++    if (!task.recurrence) return '??';
++    const rec = task.recurrence;
++    const startStr = rec.startDate || (task.createdAt ? task.createdAt.split('T')[0] : '1970-01-01');
++    const startDate = new Date(startStr + 'T00:00:00');
++    const sMmdd = `${startDate.getMonth() + 1}/${startDate.getDate()}`;
++
++    // Build interval label
++    const interval = rec.interval || 1;
++    const typeMap = { daily: '??, weekly: '??, monthly: '?? };
++    const typeLabel = typeMap[rec.type] || rec.type;
++    const intervalLabel = `瘥?${interval} ${typeLabel}`;
++
++    // Calculate next occurrence after currentDateStr
++    const nextStr = getNextOccurrenceStr(task, currentDateStr);
++    const nextLabel = nextStr ? (() => {
++        const nd = new Date(nextStr + 'T00:00:00');
++        return `銝活: ${nd.getMonth() + 1}/${nd.getDate()}`;
++    })() : '';
++
++    return [sMmdd, intervalLabel, nextLabel].filter(Boolean).join(' | ');
++}
++
++/**
++ * Find the next occurrence date of a recurring task after `fromDateStr`.
++ * Looks up to 366 days ahead.
++ */
++function getNextOccurrenceStr(task, fromDateStr) {
++    if (!task.recurrence) return null;
++    const rec = task.recurrence;
++    const endStr = rec.endDate;
++    const d = new Date(fromDateStr + 'T00:00:00');
++    for (let i = 1; i <= 366; i++) {
++        d.setDate(d.getDate() + 1);
++        const testStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
++        if (endStr && testStr > endStr) break;
++        // Reuse checkRecurrence logic inline
++        const startStr = rec.startDate || '1970-01-01';
++        if (testStr < startStr) continue;
++        const startDate = new Date(startStr + 'T00:00:00');
++        const targetDate = new Date(testStr + 'T00:00:00');
++        const diffDays = Math.round((targetDate - startDate) / 86400000);
++        const interval = rec.interval || 1;
++        let matches = false;
++        if (rec.type === 'daily') {
++            matches = diffDays % interval === 0;
++        } else if (rec.type === 'weekly') {
++            if (rec.daysOfWeek && rec.daysOfWeek.length > 0) {
++                if (rec.daysOfWeek.includes(targetDate.getDay())) {
++                    matches = Math.floor(diffDays / 7) % interval === 0;
++                }
++            } else {
++                matches = diffDays % (7 * interval) === 0;
++            }
++        } else if (rec.type === 'monthly') {
++            if (targetDate.getDate() === startDate.getDate()) {
++                const monthDiff = (targetDate.getFullYear() - startDate.getFullYear()) * 12 + (targetDate.getMonth() - startDate.getMonth());
++                matches = monthDiff % interval === 0;
++            }
++        }
++        if (matches) return testStr;
++    }
++    return null;
++}
++
++/**
++ * Renders the today flowchart grid in #addView and populates pending task chips.
++ * This is called whenever the 'add' view is rendered.
++ */
++function renderTodayFlowchart() {
++    const todayStr = getLocalDateStr();
++    const todayTasks = getTasksForDate(todayStr);
++
++    // Exclude penalty items (score < 0 or bad habits), persistent items, and completed items from regular tasks
++    const filteredRegularTasks = todayTasks.filter(t => !t.time && !(t.completedHistory && t.completedHistory[todayStr]) && Number(t.score) >= 0 && !t.isBadHabit && !t.isPersistent);
++
++    // Get today's active Gantt tasks
++    const ganttTasks = getGanttTasksForDate(todayStr);
++    const ganttChips = ganttTasks.filter(gt => {
++        if (gt.completed) return false;
++        if (Number(gt.score) < 0) return false; // Filter out negative score Gantt items
++        // Check if there is already a scheduled copy in state.tasks for today that has a time slot
++        const hasScheduledTime = todayTasks.some(t => t.ganttId == gt.id && t.time);
++        return !hasScheduledTime;
++    }).map(gt => ({
++        id: gt.id,
++        name: gt.name,
++        score: gt.score,
++        isGantt: true,
++        importance: gt.importance,
++        projId: gt.projId,
++        parentId: gt.parentId
++    }));
++
++    const untimedTasks = [...filteredRegularTasks, ...ganttChips];
++
++    const dateLabel = document.getElementById('flowchartDateLabel');
++    if (dateLabel) {
++        const d = new Date(todayStr + 'T00:00:00');
++        dateLabel.textContent = `隞敺齒 (${d.getMonth() + 1}??{d.getDate()}??- ??${untimedTasks.length} ??`;
++    }
++
++    // --- Pending chips (tasks without a time slot) ---
++    const chipsContainer = document.getElementById('pendingTaskChips');
++    if (chipsContainer) {
++        chipsContainer.innerHTML = '';
++        if (untimedTasks.length === 0) {
++            chipsContainer.innerHTML = '<span style="color:var(--text-secondary);font-size:0.8rem;">?∪?颲虫???/span>';
++        } else {
++            untimedTasks.forEach(task => {
++                const chip = document.createElement('div');
++                chip.className = 'pending-task-chip';
++                chip.draggable = true;
++                chip.dataset.taskId = task.id;
++                chip.innerHTML = `<span>${task.name}</span>`;
++                // Drag start
++                chip.addEventListener('dragstart', (e) => {
++                    e.dataTransfer.setData('text/plain', task.id);
++                    chip.style.opacity = '0.5';
++                });
++                chip.addEventListener('dragend', () => { chip.style.opacity = '1'; });
++                // Click to open time range modal
++                chip.addEventListener('click', () => openTimeRangeModal(task, todayStr, null));
++                chipsContainer.appendChild(chip);
++            });
++        }
++    }
++
++    // --- Flowchart Grid ---
++    const grid = document.getElementById('todayGrid');
++    if (!grid) return;
++    grid.innerHTML = '';
++
++    // Build hour rows 06:00 - 23:00
++    const HOUR_START = 6;
++    const HOUR_END = 23;
++    const todayTasks = getTasksForDate(todayStr);
++    const timedTasks = todayTasks.filter(t => t.time);
++
++    for (let h = HOUR_START; h <= HOUR_END; h++) {
++        const hStr = String(h).padStart(2, '0') + ':00';
++        const row = document.createElement('div');
++        row.className = 'flowchart-hour-row';
++        row.dataset.hour = h;
++        row.innerHTML = `
++            <div class="flowchart-hour-label">${hStr}</div>
++            <div class="flowchart-hour-content" data-hour="${h}"></div>
++        `;
++        // Drag over / drop support
++        const content = row.querySelector('.flowchart-hour-content');
++        content.addEventListener('dragover', (e) => { e.preventDefault(); content.classList.add('drag-over'); });
++        content.addEventListener('dragleave', () => { content.classList.remove('drag-over'); });
++        content.addEventListener('drop', (e) => {
++            e.preventDefault();
++            content.classList.remove('drag-over');
++            const taskId = e.dataTransfer.getData('text/plain');
++            let task = state.tasks.find(t => t.id == taskId);
++            if (!task) {
++                const todayGanttTasks = getGanttTasksForDate(todayStr);
++                const gt = todayGanttTasks.find(g => g.id == taskId);
++                if (gt) {
++                    task = gt;
++                }
++            }
++            if (task) {
++                openTimeRangeModal(task, todayStr, hStr);
++            }
++        });
++        grid.appendChild(row);
++    }
++
++    // Place timed tasks into their hour slots
++    timedTasks.forEach(task => {
++        const hour = parseInt((task.time || '').split(':')[0]);
++        if (hour >= HOUR_START && hour <= HOUR_END) {
++            const content = grid.querySelector(`.flowchart-hour-content[data-hour="${hour}"]`);
++            if (content) {
++                const block = document.createElement('div');
++                block.className = 'flowchart-task-block';
++                block.style.background = 'var(--accent-primary)';
++                const timeRange = task.endTime ? `${task.time}-${task.endTime}` : task.time;
++                block.innerHTML = `<span class="ftb-time">${timeRange}</span><span class="ftb-name">${task.name}</span>`;
++                block.addEventListener('click', () => openTimeRangeModal(task, todayStr, task.time));
++                content.appendChild(block);
++            }
++        }
++    });
++}
++
++/** Opens time range modal for a task */
++let timeRangeTargetTask = null;
++let timeRangeTargetDate = null;
++
++function openTimeRangeModal(task, dateStr, prefillStartTime) {
++    timeRangeTargetTask = task;
++    timeRangeTargetDate = dateStr;
++    const modal = document.getElementById('timeRangeModal');
++    const title = document.getElementById('timeRangeModalTitle');
++    const startInput = document.getElementById('trStartTime');
++    const endInput = document.getElementById('trEndTime');
++    if (!modal) return;
++    if (title) title.textContent = `??${task.name}`;
++    if (startInput) startInput.value = prefillStartTime || task.time || '';
++    if (endInput) endInput.value = task.endTime || '';
++    modal.classList.remove('hidden');
++}
++
++function setupTimeRangeModalListeners() {
++    const modal = document.getElementById('timeRangeModal');
++    const closeBtn = document.getElementById('closeTimeRangeModalBtn');
++    const cancelBtn = document.getElementById('cancelTimeRangeBtn');
++    const confirmBtn = document.getElementById('confirmTimeRangeBtn');
++    const removeBtn = document.getElementById('removeTimeRangeBtn');
++
++    const closeModal = () => { if (modal) modal.classList.add('hidden'); };
++    if (closeBtn) closeBtn.onclick = closeModal;
++    if (cancelBtn) cancelBtn.onclick = closeModal;
++
++    if (confirmBtn) {
++        confirmBtn.onclick = () => {
++            if (!timeRangeTargetTask) return closeModal();
++            const startVal = document.getElementById('trStartTime').value;
++            const endVal = document.getElementById('trEndTime').value;
++            if (endVal && startVal && endVal <= startVal) {
++                return alert('蝯???敹??????');
++            }
++            // Apply to the task
++            let task = state.tasks.find(t => t.id == timeRangeTargetTask.id);
++            if (!task && timeRangeTargetTask.isGantt) {
++                // Look for existing scheduled copy of this Gantt task for today
++                task = state.tasks.find(t => t.ganttId == timeRangeTargetTask.id && t.date === timeRangeTargetDate);
++                if (!task) {
++                    task = {
++                        id: Date.now(),
++                        ganttId: timeRangeTargetTask.id,
++                        name: timeRangeTargetTask.name,
++                        type: 'scheduled',
++                        date: timeRangeTargetDate,
++                        score: timeRangeTargetTask.score || 0,
++                        importance: timeRangeTargetTask.importance || 'medium',
++                        createdAt: new Date().toISOString(),
++                        completedHistory: {}
++                    };
++                    state.tasks.push(task);
++                }
++            }
++            if (task) {
++                if (task.type === 'recurring' && task.recurrence) {
++                    // Store as single-day exception
++                    if (!task.exceptions) task.exceptions = {};
++                    const existing = (typeof task.exceptions[timeRangeTargetDate] === 'object') ? task.exceptions[timeRangeTargetDate] : {};
++                    task.exceptions[timeRangeTargetDate] = { ...existing, time: startVal, endTime: endVal || null };
++                } else {
++                    task.time = startVal;
++                    task.endTime = endVal || null;
++                }
++                saveState();
++                renderTodayFlowchart();
++                // Also refresh the weekly schedule if it's visible
++                if (currentView === 'focusedGantt') renderWeeklySchedule();
++            }
++            timeRangeTargetTask = null;
++            closeModal();
++        };
++    }
++
++    if (removeBtn) {
++        removeBtn.onclick = () => {
++            if (!timeRangeTargetTask) return closeModal();
++            const task = state.tasks.find(t => t.id == timeRangeTargetTask.id || (timeRangeTargetTask.isGantt && t.ganttId == timeRangeTargetTask.id && t.date === timeRangeTargetDate));
++            if (task) {
++                if (task.ganttId) {
++                    // If it is a Gantt task copy, just delete it from state.tasks entirely!
++                    state.tasks = state.tasks.filter(t => t.id !== task.id);
++                } else if (task.type === 'recurring' && task.recurrence) {
++                    // Store as single-day exception with empty/null time values
++                    if (!task.exceptions) task.exceptions = {};
++                    const existing = (typeof task.exceptions[timeRangeTargetDate] === 'object') ? task.exceptions[timeRangeTargetDate] : {};
++                    task.exceptions[timeRangeTargetDate] = { ...existing, time: null, endTime: null };
++                } else {
++                    task.time = null;
++                    task.endTime = null;
++                }
++                saveState();
++                renderTodayFlowchart();
++                if (currentView === 'focusedGantt') renderWeeklySchedule();
++            }
++            timeRangeTargetTask = null;
++            closeModal();
++        };
++    }
++}
++
++window.openTimeRangeModal = openTimeRangeModal;
++window.renderTodayFlowchart = renderTodayFlowchart;
++
+ // --- Gantt System Logic ---
+ function setupGanttListeners() {
+     const g = els.gantt;
+@@ -4112,6 +4640,7 @@ function renderGanttMainPage() {
+                 <div class="project-title">${proj.name}</div>
+                 <div style="display: flex; gap: 8px; align-items: center;">
+                     <div class="project-score">${proj.score} ??/div>
++                    <button class="btn-icon-small" onclick="openProjectPlan('${proj.id}')" title="隡??貊楊頛臬">??</button>
+                     <button class="btn-icon-small" onclick="openEditGanttProjectModal('${proj.id}')">??</button>
+                 </div>
+             </div>
+@@ -4974,62 +5503,44 @@ window.updateDataSyncStatus = function (status) {
+ };
+ 
+ // Update diagnostic stats in data view
++
+ window.updateDataDiagnosticStats = function () {
+     const statsEl = document.getElementById('dataDiagnosticStats');
+     const rawEl = document.getElementById('dataDebugRaw');
+     if (!statsEl) return;
+-
+     const taskCount = state.tasks ? state.tasks.length : 0;
+     const projectCount = (state.ganttSystem && state.ganttSystem.projects) ? state.ganttSystem.projects.length : 0;
+     const lastUpdate = state.updatedAt ? new Date(state.updatedAt).toLocaleString() : '??;
+-
+     statsEl.innerHTML = `隞餃??? ${taskCount} | 隡??? ${projectCount} | ?敺?? ${lastUpdate}`;
+-    if (rawEl) {
+-        rawEl.textContent = JSON.stringify(state, null, 2);
+-    }
++    if (rawEl) rawEl.textContent = JSON.stringify(state, null, 2);
+ };
+ 
+ // ============================================
+ // Cloud Backup System
+ // ============================================
+ 
+-// Helper: Get date string with offset
+ function getDateStrOffset(days) {
+     const d = new Date();
+     d.setDate(d.getDate() + days);
+     return getLocalDateStr(d);
+ }
+ 
+-// Check and perform daily backup
+ async function checkAndPerformDailyBackup() {
+     try {
+         const today = getLocalDateStr();
+         const lastBackupDate = localStorage.getItem('lastBackupDate');
+-
+-        console.log(`Checking daily backup: today=${today}, lastBackup=${lastBackupDate}`);
+-
+         if (lastBackupDate !== today) {
+-            console.log('Performing daily backup...');
+             await performDailyBackup();
+             localStorage.setItem('lastBackupDate', today);
+-            console.log('Daily backup completed');
+         }
+-    } catch (error) {
+-        console.error('Daily backup check failed:', error);
+-    }
++    } catch (error) { console.error('Daily backup check failed:', error); }
+ }
+ 
+-// Perform daily backup
+ async function performDailyBackup() {
+-    if (!db) {
+-        console.warn('Firestore not available, skipping backup');
+-        return;
+-    }
+-
++    if (!db) return;
+     try {
+         const yesterday = getDateStrOffset(-1);
+         const backupId = `backup-${yesterday}`;
+-
+         const backupData = {
+             backupDate: yesterday,
+             createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+@@ -5042,61 +5553,29 @@ async function performDailyBackup() {
+                 lastLoginDate: state.lastLoginDate || ''
+             }
+         };
+-
+         await db.collection('dailyBackups').doc(backupId).set(backupData);
+-        console.log(`Daily backup created: ${backupId}`);
+-
+-        // Cleanup old backups
+         await cleanupOldBackups();
+-    } catch (error) {
+-        console.error('Failed to perform daily backup:', error);
+-        throw error;
+-    }
++    } catch (error) { console.error('Failed to perform daily backup:', error); }
+ }
+ 
+-// Cleanup old backups (keep only last 2 days)
+ async function cleanupOldBackups() {
+     if (!db) return;
+-
+     try {
+         const twoDaysAgo = getDateStrOffset(-2);
+-        const snapshot = await db.collection('dailyBackups')
+-            .where('backupDate', '<', twoDaysAgo)
+-            .get();
+-
+-        if (snapshot.empty) {
+-            console.log('No old backups to clean up');
+-            return;
+-        }
+-
++        const snapshot = await db.collection('dailyBackups').where('backupDate', '<', twoDaysAgo).get();
+         const batch = db.batch();
+-        snapshot.docs.forEach(doc => {
+-            console.log(`Deleting old backup: ${doc.id}`);
+-            batch.delete(doc.ref);
+-        });
++        snapshot.docs.forEach(doc => batch.delete(doc.ref));
+         await batch.commit();
+-        console.log(`Cleaned up ${snapshot.size} old backups`);
+-    } catch (error) {
+-        console.error('Failed to cleanup old backups:', error);
+-    }
++    } catch (error) { console.error('Failed to cleanup old backups:', error); }
+ }
+ 
+-// Manual cloud backup
+ window.createManualCloudBackup = async function () {
+-    if (!db) {
+-        alert('?脩垢???芷?');
+-        return;
+-    }
+-
+-    if (!confirm('蝣箏?閬??撱粹蝡臬?隞賢?嚗?)) {
+-        return;
+-    }
+-
++    if (!db) { alert('?脩垢???芷?'); return; }
++    if (!confirm('蝣箏?閬??撱粹蝡臬?隞賢?嚗?)) return;
+     try {
+         const timestamp = Date.now();
+         const today = getLocalDateStr();
+         const backupId = `manual-${timestamp}`;
+-
+         const backupData = {
+             backupDate: today,
+             createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+@@ -5110,191 +5589,164 @@ window.createManualCloudBackup = async function () {
+                 lastLoginDate: state.lastLoginDate || ''
+             }
+         };
+-
+         await db.collection('dailyBackups').doc(backupId).set(backupData);
+-
+-        const taskCount = state.tasks.length;
+-        const projectCount = (state.ganttSystem && state.ganttSystem.projects) ? state.ganttSystem.projects.length : 0;
+-        const transactionCount = (state.accounting && state.accounting.transactions) ? state.accounting.transactions.length : 0;
+-
+-        alert(`?脩垢?遢??嚗n\n?遢?批捆嚗n- 隞餃?嚗?{taskCount} ?n- 撠?嚗?{projectCount} ?n- 閮董嚗?{transactionCount} 蝑);
+-    } catch (error) {
+-        console.error('Manual backup failed:', error);
+-        alert('?脩垢?遢憭望?嚗? + error.message);
+-    }
++        alert('?脩垢?遢??嚗?);
++    } catch (error) { alert('?脩垢?遢憭望?嚗? + error.message); }
+ };
+ 
+-// List cloud backups
+ window.listCloudBackups = async function () {
+-    if (!db) {
+-        alert('?脩垢???芷?');
+-        return;
+-    }
+-
++    if (!db) { alert('?脩垢???芷?'); return; }
+     const listEl = document.getElementById('cloudBackupList');
+     if (!listEl) return;
+-
+     try {
+         listEl.classList.remove('hidden');
+         listEl.innerHTML = '<div style="text-align:center; padding:10px;">甇?頛?脩垢?遢...</div>';
+-
+-        const snapshot = await db.collection('dailyBackups')
+-            .orderBy('createdAt', 'desc')
+-            .limit(10)
+-            .get();
+-
++        const snapshot = await db.collection('dailyBackups').orderBy('createdAt', 'desc').limit(10).get();
+         if (snapshot.empty) {
+             listEl.innerHTML = '<div style="text-align:center; padding:10px; color:var(--text-secondary);">?桀?瘝??脩垢?遢</div>';
+             return;
+         }
+-
+         let html = '<div style="margin-bottom:8px; font-weight:bold; border-bottom: 1px solid var(--border-color); padding-bottom:8px;">?舐?蝡臬?隞?/div>';
+-
+         snapshot.docs.forEach(doc => {
+             const data = doc.data();
+-            const backupDate = data.backupDate || '?芰';
+-            const createdAt = data.createdAt ? data.createdAt.toDate().toLocaleString('zh-TW') : '?芰';
+-            const isManual = data.isManual ? ' (??)' : ' (?芸?)';
+-
+-            const taskCount = (data.data && data.data.tasks) ? data.data.tasks.length : 0;
+-            const projectCount = (data.data && data.data.ganttSystem && data.data.ganttSystem.projects) ? data.data.ganttSystem.projects.length : 0;
+-
+             html += `
+                 <div style="border-bottom:1px solid rgba(255,255,255,0.1); padding:8px 0; margin-bottom:8px;">
+-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+-                        <strong style="color:var(--accent-blue);">${backupDate}${isManual}</strong>
+-                        <button onclick="restoreFromCloudBackup('${doc.id}')" class="btn-confirm small" style="font-size:0.7rem; padding:4px 10px; background:var(--accent-green);">??</button>
+-                    </div>
+-                    <div style="font-size:0.8rem; color:var(--text-secondary);">
+-                        ?萄遣??嚗?{createdAt}<br>
+-                        隞餃?嚗?{taskCount} | 撠?嚗?{projectCount}
++                    <div style="display:flex; justify-content:space-between; align-items:center;">
++                        <strong style="color:var(--accent-blue);">${data.backupDate}${data.isManual?' (??)':' (?芸?)'}</strong>
++                        <button onclick="restoreFromCloudBackup('${doc.id}')" class="btn-confirm small" style="font-size:0.7rem; background:var(--accent-green);">??</button>
+                     </div>
+                 </div>
+             `;
+         });
+-
+         listEl.innerHTML = html;
+-    } catch (error) {
+-        console.error('Failed to list cloud backups:', error);
+-        listEl.innerHTML = '<div style="color:var(--accent-red); padding:10px;">頛憭望?嚗? + error.message + '</div>';
+-    }
++    } catch (error) { listEl.innerHTML = '頛憭望?嚗? + error.message; }
+ };
+ 
+-// Restore from cloud backup
+ window.restoreFromCloudBackup = async function (backupId) {
+-    if (!db) {
+-        alert('?脩垢???芷?');
+-        return;
+-    }
+-
++    if (!db) { alert('?脩垢???芷?'); return; }
+     try {
+         const doc = await db.collection('dailyBackups').doc(backupId).get();
+-        if (!doc.exists) {
+-            alert('?遢銝???);
+-            return;
+-        }
+-
++        if (!doc.exists) { alert('?遢銝???); return; }
+         const backupData = doc.data();
+-        const taskCount = (backupData.data && backupData.data.tasks) ? backupData.data.tasks.length : 0;
+-        const projectCount = (backupData.data && backupData.data.ganttSystem && backupData.data.ganttSystem.projects) ? backupData.data.ganttSystem.projects.length : 0;
+-        const transactionCount = (backupData.data && backupData.data.accounting && backupData.data.accounting.transactions) ? backupData.data.accounting.transactions.length : 0;
+-
+-        const confirmMsg = `蝣箏?閬?甇文?隞賡????嚗n\n?遢靽⊥嚗n- ?遢?交?嚗?{backupData.backupDate}\n- 隞餃?嚗?{taskCount} ?n- 撠?嚗?{projectCount} ?n- 閮董嚗?{transactionCount} 蝑n\n霅血?嚗?摰閬??嗅?????`;
+-
+-        if (!confirm(confirmMsg)) {
+-            return;
+-        }
+-
+-        // Restore data
++        if (!confirm('蝣箏?閬???嚗?閬??暹??豢?嚗?)) return;
+         state.tasks = backupData.data.tasks || [];
+         state.ganttSystem = backupData.data.ganttSystem || { projects: [] };
+         state.accounting = backupData.data.accounting || { transactions: [], banks: [], categories: [] };
+         state.stockPrice = backupData.data.stockPrice || 100;
+         state.history = backupData.data.history || [];
+         state.lastLoginDate = backupData.data.lastLoginDate || '';
+-
+-        // Validate and repair
+         validateAndRepairState();
+-
+-        // Save to cloud
+         saveState('CloudBackupRestore');
+-
+-        alert('?豢?????嚗撠??唳????..');
+-        setTimeout(() => window.location.reload(), 500);
+-
+-    } catch (error) {
+-        console.error('Failed to restore from cloud backup:', error);
+-        alert('??憭望?嚗? + error.message);
+-    }
++        alert('????嚗?);
++        location.reload();
++    } catch (error) { alert('??憭望?嚗? + error.message); }
+ };
+ 
+-// Bind cloud backup buttons in DOMContentLoaded
+ document.addEventListener('DOMContentLoaded', () => {
+-    const createBtn = document.getElementById('createCloudBackupBtn');
+-    const listBtn = document.getElementById('listCloudBackupsBtn');
+-
+-    if (createBtn) {
+-        createBtn.onclick = window.createManualCloudBackup;
+-        console.log('Cloud backup create button bound');
+-    }
+-    if (listBtn) {
+-        listBtn.onclick = window.listCloudBackups;
+-        console.log('Cloud backup list button bound');
+-    }
+-
+-    const accRecoveryBtn = document.getElementById('accDataRecoveryBtn');
+-    if (accRecoveryBtn) {
+-        accRecoveryBtn.onclick = () => {
+-            // Close settings first
+-            const settingsModal = document.getElementById('accountingSettingsModal');
+-            if (settingsModal) settingsModal.classList.add('hidden');
+-
+-            // Switch to Data View
+-            if (typeof renderView === 'function') renderView('data');
+-
+-            // Trigger Scan
+-            setTimeout(() => {
+-                if (window.scanForBackups) window.scanForBackups();
+-            }, 500);
+-        };
+-    }
++    const c = document.getElementById('createCloudBackupBtn');
++    const l = document.getElementById('listCloudBackupsBtn');
++    if (c) c.onclick = window.createManualCloudBackup;
++    if (l) l.onclick = window.listCloudBackups;
+ });
+ 
+-
+-// ============================================
+-// Calendar Rendering with Today Highlight
+-// ============================================
+-
+-// Add this to ensure calendar rendering has today highlight
+-// This should be called when schedule view is rendered
+ window.renderCalendarWithTodayHighlight = function () {
+-    const calendarGrid = document.getElementById('calendarGrid');
+-    if (!calendarGrid) return;
+-
++    const grid = document.getElementById('calendarGrid');
++    if (!grid) return;
+     const today = getLocalDateStr();
+-
+-    // Find all calendar day elements and add today class to matching date
+-    const dayElements = calendarGrid.querySelectorAll('.calendar-day');
+-    dayElements.forEach(dayEl => {
+-        const dayDate = dayEl.dataset.date; // Assumes calendar days have data-date attribute
+-        if (dayDate === today) {
+-            dayEl.classList.add('today');
+-        }
+-    });
++    grid.querySelectorAll('.calendar-day').forEach(d => { if (d.dataset.date === today) d.classList.add('today'); });
+ };
+ 
+-// Patch renderView to call calendar highlight when switching to schedule
+ const originalRenderView = window.renderView || renderView;
+ if (typeof originalRenderView === 'function') {
+-    window.renderView = function (viewName) {
+-        originalRenderView(viewName);
+-
+-        if (viewName === 'schedule') {
+-            // Wait for DOM update then highlight today
+-            setTimeout(() => {
+-                renderCalendarWithTodayHighlight();
+-            }, 10);
+-        }
++    window.renderView = function (v) {
++        originalRenderView(v);
++        if (v === 'schedule') setTimeout(() => { renderCalendarWithTodayHighlight(); }, 10);
+     };
+ }
+ 
++// --- Gantt 3.1 Project Plan ---
++let currentPlanProjectId = null;
++let currentProjectPlanBlocks = [];
++function generatePlanId() { return 'plan-' + Date.now() + '-' + Math.floor(Math.random() * 1000); }
++
++const DEFAULT_PLAN_BLOCKS = [
++    { id: generatePlanId(), type: 'textarea', title: '銝??撠??箸鞈?', content: '撠??迂嚗n?????交?嚗? },
++    { id: generatePlanId(), type: 'textarea', title: '鈭??詨??格?', content: '' },
++    { id: generatePlanId(), type: 'textarea', title: '銝?撽璅?', content: '' },
++    { id: generatePlanId(), type: 'textarea', title: '??鞈??瘙?, content: '' },
++    { id: generatePlanId(), type: 'tasklist', title: '鈭?隞餃??圾', tasks: [{ id: generatePlanId(), name: '甇仿?銝', difficulty: '雿? }] },
++    { id: generatePlanId(), type: 'textarea', title: '?准?憸券?', content: '' }
++];
++
++window.openProjectPlan = function(id) {
++    const p = state.ganttSystem.projects.find(x => x.id == id);
++    if (!p) return;
++    currentPlanProjectId = id;
++    document.getElementById('planProjectName').innerText = '隡??? ' + p.name;
++    currentProjectPlanBlocks = p.projectPlan && p.projectPlan.length ? JSON.parse(JSON.stringify(p.projectPlan)) : JSON.parse(JSON.stringify(DEFAULT_PLAN_BLOCKS));
++    renderProjectPlanBlocks();
++    document.getElementById('projectPlanModal').classList.remove('hidden');
++};
++
++function renderProjectPlanBlocks() {
++    const c = document.getElementById('projectPlanBlocks');
++    if (!c) return;
++    c.innerHTML = '';
++    currentProjectPlanBlocks.forEach(b => {
++        const d = document.createElement('div');
++        d.className = 'plan-block';
++        d.innerHTML = `<div class="plan-block-header">
++            <input type="text" class="plan-block-title" value="${b.title}" onchange="updatePlanBlockTitle('${b.id}', this.value)">
++            <button class="delete-block-btn" onclick="deletePlanBlock('${b.id}')">??/button>
++        </div>`;
++        if (b.type === 'textarea') {
++            const t = document.createElement('textarea');
++            t.className = 'plan-block-textarea';
++            t.value = b.content || '';
++            t.onchange = (e) => b.content = e.target.value;
++            d.appendChild(t);
++        } else if (b.type === 'tasklist') {
++            const list = document.createElement('div');
++            const rl = () => {
++                list.innerHTML = '';
++                (b.tasks || []).forEach(t => {
++                    const i = document.createElement('div');
++                    i.className = 'plan-task-item';
++                    i.innerHTML = `<input type="text" class="plan-task-input" value="${t.name}" onchange="updatePlanTaskName('${b.id}', '${t.id}', this.value)">
++                        <button class="btn-confirm small" onclick="importPlanTaskToGantt('${t.name}')">?</button>
++                        <button class="btn-icon-small" onclick="deletePlanTask('${b.id}', '${t.id}')">??/button>`;
++                    list.appendChild(i);
++                });
++                const add = document.createElement('button');
++                add.className = 'btn-secondary small';
++                add.innerText = '+';
++                add.onclick = () => { if(!b.tasks) b.tasks = []; b.tasks.push({id:generatePlanId(), name:''}); rl(); };
++                list.appendChild(add);
++            };
++            rl();
++            d.appendChild(list);
++        }
++        c.appendChild(d);
++    });
++}
++
++window.updatePlanBlockTitle = (id,v) => { const b = currentProjectPlanBlocks.find(x=>x.id==id); if(b) b.title=v; };
++window.deletePlanBlock = (id) => { if(confirm('嚗?)) { currentProjectPlanBlocks = currentProjectPlanBlocks.filter(x=>x.id!=id); renderProjectPlanBlocks(); } };
++window.updatePlanTaskName = (bid,tid,v) => { const b = currentProjectPlanBlocks.find(x=>x.id==bid); if(b && b.tasks) { const t=b.tasks.find(x=>x.id==tid); if(t) t.name=v; } };
++window.deletePlanTask = (bid,tid) => { const b = currentProjectPlanBlocks.find(x=>x.id==bid); if(b && b.tasks) { b.tasks=b.tasks.filter(x=>x.id!=tid); renderProjectPlanBlocks(); } };
++window.importPlanTaskToGantt = (n) => { if(!n) return; document.getElementById('projectPlanModal').classList.add('hidden'); viewProjectDetail(currentPlanProjectId); setTimeout(()=>{ const i=document.getElementById('addGanttItemName'); if(i){i.value=n; i.focus();} },100); };
++
++document.addEventListener('DOMContentLoaded', () => {
++    setTimeout(() => {
++        const cl = document.getElementById('closeProjectPlanBtn'); if(cl) cl.onclick = () => document.getElementById('projectPlanModal').classList.add('hidden');
++        const s = document.getElementById('saveProjectPlanBtn'); if(s) s.onclick = () => { const p = state.ganttSystem.projects.find(x=>x.id==currentPlanProjectId); if(p){p.projectPlan=currentProjectPlanBlocks; saveState(); alert('ok'); document.getElementById('projectPlanModal').classList.add('hidden');} };
++        const t = document.getElementById('addPlanTextBlockBtn'); if(t) t.onclick = () => { currentProjectPlanBlocks.push({id:generatePlanId(),type:'textarea',title:'??}); renderProjectPlanBlocks(); };
++        const a = document.getElementById('addPlanTaskBlockBtn'); if(a) a.onclick = () => { currentProjectPlanBlocks.push({id:generatePlanId(),type:'tasklist',title:'??}); renderProjectPlanBlocks(); };
++    }, 500);
++});
++
++window.forceUpdate = function() {
++    if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then(r => { for(let reg of r) reg.unregister(); });
++    if ('caches' in window) caches.keys().then(k => Promise.all(k.map(key => caches.delete(key)))).then(() => location.reload(true));
++    else location.reload(true);
++};

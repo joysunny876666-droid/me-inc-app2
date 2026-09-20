@@ -1,0 +1,1149 @@
+==================
+Get-Content "C:\Users\joysu\.gemini\antigravity\scratch\me-inc-app\sw.js"
+==================
+node -e "
+const fs = require('fs');
+const app = fs.readFileSync('./app.js', 'utf8');
+const html = fs.readFileSync('./index.html', 'utf8');
+const css = fs.readFileSync('./style.css', 'utf8');
+
+// Check key v4.0 markers
+const checks = [
+    ['app.js: renderTodayFlowchart function exists', app.includes('function renderTodayFlowchart()')],
+    ['app.js: getRecurrenceDisplayInfo exists', app.includes('function getRecurrenceDisplayInfo')],
+    ['app.js: getNextOccurrenceStr exists', app.includes('function getNextOccurrenceStr')],
+    ['app.js: setupTimeRangeModalListeners exists', app.includes('function setupTimeRangeModalListeners')],
+    ['app.js: setupTimeRangeModalListeners called in init', app.includes('setupTimeRangeModalListeners()')],
+    ['app.js: VIEW_MAP add calls renderTodayFlowchart', app.includes('renderTodayFlowchart(); }, // v4.0')],
+    ['app.js: bypass scope modal (updateRecurringFuture direct)', app.includes('updateRecurringFuture();') && !app.includes('els.editScopeModal.el.classList.remove')],
+    ['app.js: mission task ends recurrence', app.includes('task.recurrence.endDate = dateStr')],
+    ['html: add-view-main exists', html.includes('add-view-main')],
+    ['html: add-flowchart-side exists', html.includes('add-flowchart-side')],
+    ['html: todayGrid exists', html.includes('id=\"todayGrid\"')],
+    ['html: timeRangeModal exists', html.includes('id=\"timeRangeModal\"')],
+    ['html: pendingTaskChips exists', html.includes('id=\"pendingTaskChips\"')],
+    ['css: flowchart-hour-row exists', css.includes('.flowchart-hour-row')],
+    ['css: flowchart-task-block exists', css.includes('.flowchart-task-block')],
+    ['css: add-view-main flex exists', css.includes('.add-view-main')],
+];
+
+checks.forEach(([name, pass]) => {
+    console.log((pass ? '✅' : '❌') + ' ' + name);
+});
+"
+
+==================
+$app = Get-Content ".\app.js" -Raw
+$html = Get-Content ".\index.html" -Raw
+$css = Get-Content ".\style.css" -Raw
+
+$checks = @(
+    @{Name="app.js: renderTodayFlowchart"; Pass=$app.Contains("function renderTodayFlowchart()")},
+    @{Name="app.js: getRecurrenceDisplayInfo"; Pass=$app.Contains("function getRecurrenceDisplayInfo")},
+    @{Name="app.js: setupTimeRangeModalListeners def"; Pass=$app.Contains("function setupTimeRangeModalListeners")},
+    @{Name="app.js: setupTimeRangeModalListeners call"; Pass=$app.Contains("setupTimeRangeModalListeners()")},
+    @{Name="app.js: VIEW_MAP add=renderTodayFlowchart"; Pass=$app.Contains("renderTodayFlowchart(); }, // v4.0")},
+    @{Name="app.js: bypass scope modal removed"; Pass=(-not $app.Contains("els.editScopeModal.el.classList.remove('hidden')"))},
+    @{Name="app.js: mission ends recurrence"; Pass=$app.Contains("task.recurrence.endDate = dateStr")},
+    @{Name="html: add-view-main"; Pass=$html.Contains("add-view-main")},
+    @{Name="html: add-flowchart-side"; Pass=$html.Contains("add-flowchart-side")},
+    @{Name="html: todayGrid"; Pass=$html.Contains("id=`"todayGrid`"")},
+    @{Name="html: timeRangeModal"; Pass=$html.Contains("id=`"timeRangeModal`"")},
+    @{Name="html: pendingTaskChips"; Pass=$html.Contains("id=`"pendingTaskChips`"")},
+    @{Name="css: flowchart-hour-row"; Pass=$css.Contains(".flowchart-hour-row")},
+    @{Name="css: flowchart-task-block"; Pass=$css.Contains(".flowchart-task-block")},
+    @{Name="css: add-view-main flex"; Pass=$css.Contains(".add-view-main")}
+)
+
+foreach ($c in $checks) {
+    $icon = if ($c.Pass) { "OK" } else { "FAIL" }
+    Write-Host "$icon  $($c.Name)"
+}
+
+==================
+$app = Get-Content ".\app.js" -Raw
+# Check for obvious syntax issues around the new functions
+$funcStart = $app.IndexOf("function renderTodayFlowchart()")
+$funcEnd = $app.IndexOf("window.openTimeRangeModal = openTimeRangeModal")
+if ($funcStart -ge 0) {
+    Write-Host "renderTodayFlowchart starts at char: $funcStart"
+    Write-Host "window.openTimeRangeModal at char: $funcEnd"
+    Write-Host "Snippet of VIEW_MAP add line:"
+    $mapIdx = $app.IndexOf("'add': () =>")
+    Write-Host $app.Substring($mapIdx, 80)
+} else {
+    Write-Host "FUNCTION NOT FOUND!"
+}
+
+# Count braces in the new block to check balance
+$block = $app.Substring($funcStart, $funcEnd - $funcStart)
+$open = ($block.ToCharArray() | Where-Object {$_ -eq '{'}).Count
+$close = ($block.ToCharArray() | Where-Object {$_ -eq '}'}).Count
+Write-Host "Brace balance in new block: open=$open close=$close (should be equal)"
+
+==================
+npm -v
+==================
+node -c app.js
+==================
+python -c "print('hello')"
+==================
+py -c "print('hello')"
+==================
+git status
+==================
+git diff app.js
+==================
+git diff app.js > my_diff.txt
+==================
+Get-Content my_diff.txt | Out-File -Encoding UTF8 my_diff_utf8.txt
+==================
+& "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless --enable-logging --v=1 --dump-dom file:///c:/Users/joysu/.gemini/antigravity/scratch/me-inc-app/index.html > edge_log.txt
+==================
+Get-Content edge_log.txt -TotalCount 50
+==================
+Get-Content app.js | Select-String -Pattern "renderStartPage" -Context 5, 20 > startpage.txt
+==================
+Get-Content startpage.txt -TotalCount 200
+==================
+git diff index.html > diff_index.txt && Get-Content diff_index.txt | Out-File -Encoding UTF8 diff_index_utf8.txt
+==================
+git diff index.html > diff_index.txt; Get-Content diff_index.txt | Out-File -Encoding UTF8 diff_index_utf8.txt
+==================
+Get-Content fix_app.js
+==================
+$text = Get-Content -Raw app.js; $stack = New-Object System.Collections.Generic.Stack[int]; $lines = $text -split "`n"; $lineNum = 1; foreach ($line in $lines) { $charNum = 1; foreach ($c in $line.ToCharArray()) { if ($c -eq '{') { $stack.Push($lineNum) } elseif ($c -eq '}') { if ($stack.Count -gt 0) { $null = $stack.Pop() } else { Write-Host "Extra } at line $lineNum"; break } } $charNum++ }; $lineNum++ }; if ($stack.Count -gt 0) { Write-Host "Unclosed { at line $($stack.Peek())" } else { Write-Host "Braces are balanced!" }
+==================
+$text = Get-Content -Raw app.js; $stack = New-Object System.Collections.Generic.Stack[int]; $lines = $text -split "`n"; $lineNum = 1; foreach ($line in $lines) { $charNum = 1; foreach ($c in $line.ToCharArray()) { if ($c -eq '(') { $stack.Push($lineNum) } elseif ($c -eq ')') { if ($stack.Count -gt 0) { $null = $stack.Pop() } else { Write-Host "Extra ) at line $lineNum"; break } } $charNum++ }; $lineNum++ }; if ($stack.Count -gt 0) { Write-Host "Unclosed ( at line $($stack.Peek())" } else { Write-Host "Parens are balanced!" }
+==================
+where node
+==================
+Remove-Item -Force final_fix.js, fix_app.js, my_changes.patch, patch.js, patch.ps1, patch2.ps1, patch3.ps1, patch4.ps1, read_all_docx.js, read_docx.ps1, read_docx.py, read_docx2.ps1, read_xml.js, repair.js, repair_code.txt, replacement.txt, replacement2.txt, target.txt, docx_output.txt, output.txt, edge_log.txt, my_diff.txt, my_diff_utf8.txt, diff_index.txt, diff_index_utf8.txt, startpage.txt; Remove-Item -Force -Recurse temp_docx_extract, temp_mbxn4d
+==================
+$code = "<script>window.onerror = function(msg, url, lineNo, columnNo, error) { document.body.innerHTML += '<h1 id=`"ERROR_LOG`">' + msg + ' at ' + lineNo + '</h1>'; return false; };</script>"; $content = Get-Content index.html -Raw; $content = $content -replace "<head>", "<head>`n$code"; Set-Content index.html $content
+==================
+& "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless --dump-dom file:///c:/Users/joysu/.gemini/antigravity/scratch/me-inc-app/index.html > dom.html
+==================
+Select-String "ERROR_LOG" dom.html
+==================
+Get-Item dom.html | Select-Object Length
+==================
+$code = @"
+using System;
+using System.Collections.Generic;
+using System.IO;
+
+public class Checker {
+    public static void Main() {
+        string text = File.ReadAllText("app.js");
+        var stack = new Stack<char>();
+        var lines = new Stack<int>();
+        int line = 1;
+        bool inString = false;
+        bool inSingleString = false;
+        bool inTemplate = false;
+        bool inLineComment = false;
+        bool inBlockComment = false;
+        
+        for (int i = 0; i < text.Length; i++) {
+            char c = text[i];
+            char next = (i + 1 < text.Length) ? text[i+1] : '\0';
+            
+            if (c == '\
+') line++;
+            
+            if (inLineComment) { if (c == '\
+') inLineComment = false; continue; }
+            if (inBlockComment) { if (c == '*' && next == '/') { inBlockComment = false; i++; } continue; }
+            
+            if (!inString && !inSingleString && !inTemplate) {
+                if (c == '/' && next == '/') { inLineComment = true; i++; continue; }
+                if (c == '/' && next == '*') { inBlockComment = true; i++; continue; }
+                
+                if (c == '"') { inString = true; continue; }
+                if (c == '\'') { inSingleString = true; continue; }
+                if (c == '`') { inTemplate = true; continue; }
+                
+                if (c == '{' || c == '(' || c == '[') { stack.Push(c); lines.Push(line); }
+                else if (c == '}' || c == ')' || c == ']') {
+                    if (stack.Count == 0) { Console.WriteLine("Unmatched " + c + " at line " + line); return; }
+                    char pop = stack.Pop();
+                    int popLine = lines.Pop();
+                    if ((c == '}' && pop != '{') || (c == ')' && pop != '(') || (c == ']' && pop != '[')) {
+                        Console.WriteLine("Mismatched " + c + " at line " + line + ", expected match for " + pop + " from line " + popLine); return;
+                    }
+                }
+            } else {
+                if (c == '\\') { i++; continue; }
+                if (inString && c == '"') inString = false;
+                else if (inSingleString && c == '\'') inSingleString = false;
+                else if (inTemplate && c == '`') inTemplate = false;
+            }
+        }
+        if (stack.Count > 0) Console.WriteLine("Unmatched " + stack.Peek() + " from line " + lines.Peek());
+        else Console.WriteLine("All balanced!");
+    }
+}
+"@
+Set-Content check.cs $code
+& "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo check.cs
+if ($LASTEXITCODE -eq 0) { .\check.exe }
+
+==================
+$code = @"
+using System;
+using System.Collections.Generic;
+using System.IO;
+
+public class Checker {
+    public static void Main() {
+        string text = File.ReadAllText("app.js");
+        var stack = new Stack<char>();
+        var lines = new Stack<int>();
+        int line = 1;
+        bool inString = false;
+        bool inSingleString = false;
+        bool inTemplate = false;
+        bool inLineComment = false;
+        bool inBlockComment = false;
+        
+        for (int i = 0; i < text.Length; i++) {
+            char c = text[i];
+            char next = (i + 1 < text.Length) ? text[i+1] : '\0';
+            
+            if (c == '\
+') line++;
+            
+            if (inLineComment) { if (c == '\
+') inLineComment = false; continue; }
+            if (inBlockComment) { if (c == '*' && next == '/') { inBlockComment = false; i++; } continue; }
+            
+            if (!inString && !inSingleString && !inTemplate) {
+                if (c == '/' && next == '/') { inLineComment = true; i++; continue; }
+                if (c == '/' && next == '*') { inBlockComment = true; i++; continue; }
+                
+                if (c == '"') { inString = true; continue; }
+                if ((int)c == 39) { inSingleString = true; continue; }
+                if (c == '`') { inTemplate = true; continue; }
+                
+                if (c == '{' || c == '(' || c == '[') { stack.Push(c); lines.Push(line); }
+                else if (c == '}' || c == ')' || c == ']') {
+                    if (stack.Count == 0) { Console.WriteLine("Unmatched " + c + " at line " + line); return; }
+                    char pop = stack.Pop();
+                    int popLine = lines.Pop();
+                    if ((c == '}' && pop != '{') || (c == ')' && pop != '(') || (c == ']' && pop != '[')) {
+                        Console.WriteLine("Mismatched " + c + " at line " + line + ", expected match for " + pop + " from line " + popLine); return;
+                    }
+                }
+            } else {
+                if (c == '\\') { i++; continue; }
+                if (inString && c == '"') inString = false;
+                else if (inSingleString && (int)c == 39) inSingleString = false;
+                else if (inTemplate && c == '`') inTemplate = false;
+                
+                // template literal expressions ${...}
+                if (inTemplate && c == '$' && next == '{') {
+                    stack.Push('{'); lines.Push(line);
+                    inTemplate = false; // We are in an expression now
+                    i++;
+                }
+            }
+        }
+        if (stack.Count > 0) Console.WriteLine("Unmatched " + stack.Peek() + " from line " + lines.Peek());
+        else Console.WriteLine("All balanced!");
+    }
+}
+"@
+Set-Content check.cs $code
+& "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo check.cs
+if ($LASTEXITCODE -eq 0) { .\check.exe }
+
+==================
+$code = @"
+using System;
+using System.Collections.Generic;
+using System.IO;
+
+public class Checker {
+    public static void Main() {
+        string text = File.ReadAllText("app.js");
+        var stack = new Stack<char>();
+        var lines = new Stack<int>();
+        int line = 1;
+        bool inString = false;
+        bool inSingleString = false;
+        bool inTemplate = false;
+        bool inLineComment = false;
+        bool inBlockComment = false;
+        
+        for (int i = 0; i < text.Length; i++) {
+            char c = text[i];
+            char next = (i + 1 < text.Length) ? text[i+1] : '\0';
+            
+            if (c == '\
+') line++;
+            
+            if (inLineComment) { if (c == '\
+') inLineComment = false; continue; }
+            if (inBlockComment) { if (c == '*' && next == '/') { inBlockComment = false; i++; } continue; }
+            
+            if (!inString && !inSingleString && !inTemplate) {
+                if (c == '/' && next == '/') { inLineComment = true; i++; continue; }
+                if (c == '/' && next == '*') { inBlockComment = true; i++; continue; }
+                
+                if (c == '"') { inString = true; continue; }
+                if ((int)c == 39) { inSingleString = true; continue; }
+                if ((int)c == 96) { inTemplate = true; continue; } // 96 is backtick
+                
+                if (c == '{' || c == '(' || c == '[') { stack.Push(c); lines.Push(line); }
+                else if (c == '}' || c == ')' || c == ']') {
+                    if (stack.Count == 0) { Console.WriteLine("Unmatched " + c + " at line " + line); return; }
+                    char pop = stack.Pop();
+                    int popLine = lines.Pop();
+                    if ((c == '}' && pop != '{') || (c == ')' && pop != '(') || (c == ']' && pop != '[')) {
+                        Console.WriteLine("Mismatched " + c + " at line " + line + ", expected match for " + pop + " from line " + popLine); return;
+                    }
+                }
+            } else {
+                if (c == '\\') { i++; continue; }
+                if (inString && c == '"') inString = false;
+                else if (inSingleString && (int)c == 39) inSingleString = false;
+                else if (inTemplate && (int)c == 96) inTemplate = false;
+                
+                // template literal expressions ${...}
+                if (inTemplate && c == '$' && next == '{') {
+                    stack.Push('{'); lines.Push(line);
+                    inTemplate = false; // We are in an expression now
+                    i++;
+                }
+            }
+        }
+        if (stack.Count > 0) Console.WriteLine("Unmatched " + stack.Peek() + " from line " + lines.Peek());
+        else Console.WriteLine("All balanced!");
+    }
+}
+"@
+Set-Content check.cs $code
+& "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo check.cs
+if ($LASTEXITCODE -eq 0) { .\check.exe }
+
+==================
+git diff app.js > diff.txt; Get-Content diff.txt | Out-File -Encoding UTF8 diff_utf8.txt
+==================
+Get-Content app.js | Select-String -Pattern "cleanupAllDuplicateTasks" -Context 2, 5
+==================
+Get-Content app.js | Select-String -Pattern "let dailyRoutineTasks = todaysTasks.filter" -Context 3, 5
+==================
+Get-Content app.js | Select-String -Pattern "let dailyRoutineTasks = todaysTasks.filter" -Context 3, 5 | Select-Object LineNumber, Line
+==================
+Get-Content app.js | Select-Object -Skip 2480 -First 30 | Measure-Object -Line | Out-Null; Get-Content app.js | Select-Object -Skip 2480 -First 30
+==================
+Get-Content app.js | Select-String -Pattern "if \(cleanupAllDuplicateTasks\(\)\) \{" -Context 1, 10 | Select-Object LineNumber, Line
+==================
+Get-ChildItem modules
+==================
+Get-Content app.js | Select-String -Pattern "function fixDataAnomalies\(\) \{" -Context 0, 30
+==================
+Get-Content app.js | Select-String -Pattern "els\.addView\.form\.onsubmit" -Context 0, 30
+==================
+Get-Content app.js | Select-String -Pattern "onsubmit" -Context 0, 5
+==================
+Get-Content app.js | Select-String -Pattern "addOptionForm" -Context 0, 5
+==================
+Get-Content app.js | Select-String -Pattern "els\.addView\.form\.addEventListener" -Context 0, 5
+==================
+Get-Content app.js | Select-String -Pattern "els\.addView\.form" -Context 0, 5
+==================
+Get-Content app.js | Select-String -Pattern "handleAddOptionSubmit" -Context 0, 5
+==================
+Get-Content app.js | Select-String -Pattern "addOptionForm" -Context 0, 5
+==================
+Get-Content app.js | Select-String -Pattern "addView\.form\.onsubmit" -Context 0, 5
+==================
+Get-Content app.js | Select-String -Pattern "addEventListener" | Select-String -Pattern "submit"
+==================
+Get-Content app.js | Select-String -Pattern "addForm:" -Context 0, 5
+==================
+Get-Content app.js | Select-String -Pattern "function handleAddSubmit" -Context 0, 30
+==================
+Get-Content app.js | Select-String -Pattern "dateInput:" -Context 0, 5
+==================
+Get-Content app.js | Select-String -Pattern "const score = parseFloat" -Context 0, 30
+==================
+Get-Content app.js | Select-String -Pattern "startDate: recurrenceStartDate \|\| todayStr," -Context 0, 30
+==================
+Get-Content index.html | Select-String -Pattern "isTimeRange" -Context 0, 5
+==================
+Get-Content index.html | Select-String -Pattern "isMission" -Context 0, 5
+==================
+Get-Content index.html | Select-String -Pattern "isPersistent" -Context 0, 5
+==================
+Get-Content index.html | Select-String -Pattern "isBadHabit" -Context 0, 5
+==================
+Get-Content app.js | Select-String -Pattern "isMission:" -Context 0, 5
+==================
+Get-Content app.js | Select-String -Pattern "addForm:" -Context 5, 5
+==================
+Get-Content app.js | Select-String -Pattern "recurrenceStartDate" -Context 3, 3
+==================
+Get-Content app.js | Select-String -Pattern "renderTodayFlowchart" -Context 3, 5 | Select-String -Pattern "handleAddSubmit" -Context 5, 5
+==================
+Get-Content app.js | Select-String -Pattern "renderTodayFlowchart" -Context 3, 3
+==================
+Get-Content app.js | Select-String -Pattern "els\.addForm\.inputs\.endTimeGroup\.classList\.add\('hidden'\);" -Context 0, 10 | Select-Object LineNumber, Line
+==================
+Get-Content app.js | Select-Object -First 30
+==================
+git status; git log -n 3
+==================
+Get-Item diff.txt | Select-Object Length
+==================
+[System.IO.File]::ReadAllText("c:\Users\joysu\.gemini\antigravity\scratch\me-inc-app\diff.txt", [System.Text.Encoding]::UTF8) | Select-Object -First 20
+==================
+Get-Item app.js | Select-Object Length
+==================
+[System.IO.File]::ReadAllBytes("c:\Users\joysu\.gemini\antigravity\scratch\me-inc-app\app.js") | Select-Object -Skip 300 -First 50 | ForEach-Object { '{0:X2}' -f $_ } -join ' '
+==================
+$bytes = [System.IO.File]::ReadAllBytes("c:\Users\joysu\.gemini\antigravity\scratch\me-inc-app\app.js"); $bytes[250..350] | ForEach-Object { '{0:X2}' -f $_ } -join ' '
+==================
+python -c "
+import sys
+try:
+    with open('diff.txt', 'rb') as f:
+        data = f.read()
+    # It's UTF-16LE
+    text = data.decode('utf-16le')
+    # Try to encode to latin1 and then decode to utf8
+    print('Encoding test:', text[:1000].encode('latin1').decode('utf8'))
+except Exception as e:
+    print('Error:', e)
+"
+==================
+python --version
+==================
+node -e "
+const fs = require('fs');
+try {
+    const data = fs.readFileSync('diff.txt');
+    // Read as UTF-16LE
+    const str = data.toString('utf16le');
+    // Since git diff outputs UTF-8, but PowerShell read it as Big5, 
+    // it's highly likely it was decoded as Big5 and saved as UTF-16LE.
+    // Let's try converting back:
+    // This is hard to do natively in Node without iconv-lite.
+    console.log(str.substring(0, 100));
+} catch (e) {
+    console.error(e);
+}
+"
+==================
+Get-Item modules/08_flowchart_v4.js | Select-Object Length
+==================
+Get-Content modules/08_flowchart_v4.js | Select-Object -First 20
+==================
+Get-ChildItem -Filter *.md | Select-Object Name, Length
+==================
+Set-Content recover.cs @"
+using System;
+using System.IO;
+using System.Text;
+
+class Program
+{
+    static void Main()
+    {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        string text = File.ReadAllText("diff.txt", Encoding.Unicode);
+        
+        // Try converting back to bytes using Big5
+        Encoding big5 = Encoding.GetEncoding(950);
+        byte[] originalBytes = big5.GetBytes(text);
+        
+        // Try to read the bytes as UTF8
+        string utf8Text = Encoding.UTF8.GetString(originalBytes);
+        Console.WriteLine(utf8Text.Substring(0, Math.Min(1000, utf8Text.Length)));
+    }
+}
+"@; csc.exe recover.cs; .\ecover.exe
+==================
+C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe recover.cs; .\ecover.exe
+==================
+Set-Content recover.cs @"
+using System;
+using System.IO;
+using System.Text;
+
+class Program
+{
+    static void Main()
+    {
+        string text = File.ReadAllText("diff.txt", Encoding.Unicode);
+        Encoding big5 = Encoding.GetEncoding(950);
+        byte[] originalBytes = big5.GetBytes(text);
+        string utf8Text = Encoding.UTF8.GetString(originalBytes);
+        Console.WriteLine(utf8Text.Substring(0, Math.Min(1000, utf8Text.Length)));
+        File.WriteAllText("diff_recovered.txt", utf8Text, Encoding.UTF8);
+    }
+}
+"@; C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe recover.cs; .\ecover.exe
+==================
+git restore app.js; git apply diff_recovered.txt
+==================
+git apply --ignore-space-change --ignore-whitespace diff_recovered.txt
+==================
+patch -p1 < diff_recovered.txt
+==================
+Get-Content diff_recovered.txt | Select-Object -Skip 425 -First 20
+==================
+git apply --reject diff_recovered.txt
+==================
+"C:\Program Files\Git\usr\bin\patch.exe" -p1 < diff_recovered.txt
+==================
+cmd /c ""C:\Program Files\Git\usr\bin\patch.exe" -p1 < diff_recovered.txt"
+==================
+cmd /c '"C:\Program Files\Git\usr\bin\patch.exe" -p1 < diff_recovered.txt'
+==================
+Get-Content ..\brain\e0c23eb0-ebf9-4a25-8b12-766f659ee509\.system_generated\logs\transcript.jsonl | Select-String -Pattern "Out-File" -Context 0, 0 | Select-Object -First 10
+==================
+Get-Content ..\..\brain\e0c23eb0-ebf9-4a25-8b12-766f659ee509\.system_generated\logs\transcript.jsonl | Select-String -Pattern "Out-File" | Select-Object -First 5
+==================
+Get-Content ..\..\brain\e0c23eb0-ebf9-4a25-8b12-766f659ee509\.system_generated\logs\transcript.jsonl | Select-String -Pattern "replace_file_content|run_command" | Select-String -Pattern "fs.writeFileSync|Set-Content" | Select-Object -First 10
+==================
+git checkout app.js
+==================
+git restore app.js
+==================
+& "C:\Program Files\Git\usr\bin\patch.exe" -p1 -i diff_recovered.txt
+==================
+Set-Content fix_patch.cs @"
+using System;
+using System.IO;
+
+class Program
+{
+    static void Main()
+    {
+        string[] lines = File.ReadAllLines("diff_recovered.txt");
+        for (int i = 0; i < lines.Length; i++)
+        {
+            if (lines[i].Length == 0)
+            {
+                lines[i] = " ";
+            }
+        }
+        File.WriteAllLines("diff_fixed.txt", lines);
+    }
+}
+"@; C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe fix_patch.cs; .\fix_patch.exe
+==================
+& "C:\Program Files\Git\usr\bin\patch.exe" -p1 -i diff_fixed.txt
+==================
+Get-Content diff_fixed.txt | Select-Object -Skip 420 -First 20
+==================
+& "C:\Program Files\Git\usr\bin\patch.exe" -l -p1 -i diff_fixed.txt
+==================
+Get-Content diff_recovered.txt | Select-Object -Skip 420 -First 30
+==================
+Set-Content apply_patch.cs @"
+using System;
+using System.IO;
+using System.Collections.Generic;
+using System.Linq;
+
+class Program
+{
+    static void Main()
+    {
+        string[] diffLines = File.ReadAllLines("diff_recovered.txt");
+        List<string> appLines = File.ReadAllLines("app.js").ToList();
+        
+        List<string> currentHunk = new List<string>();
+        List<List<string>> hunks = new List<List<string>>();
+        
+        foreach (string line in diffLines)
+        {
+            if (line.StartsWith("@@"))
+            {
+                if (currentHunk.Count > 0) hunks.Add(currentHunk);
+                currentHunk = new List<string>();
+            }
+            else if (currentHunk != null && (line.StartsWith(" ") || line.StartsWith("+") || line.StartsWith("-") || line == ""))
+            {
+                currentHunk.Add(line == "" ? " " : line);
+            }
+            else if (line.StartsWith("diff ") || line.StartsWith("index ") || line.StartsWith("--- ") || line.StartsWith("+++ "))
+            {
+                // Ignore headers
+            }
+        }
+        if (currentHunk.Count > 0) hunks.Add(currentHunk);
+        
+        hunks.Reverse();
+        
+        int failed = 0;
+        foreach (var hunk in hunks)
+        {
+            List<string> originalBlock = new List<string>();
+            List<string> newBlock = new List<string>();
+            
+            foreach (var line in hunk)
+            {
+                if (line.StartsWith(" ") || line.StartsWith("-")) 
+                    originalBlock.Add(line.Substring(1));
+                if (line.StartsWith(" ") || line.StartsWith("+"))
+                    newBlock.Add(line.Substring(1));
+            }
+            
+            int matchIndex = -1;
+            for (int i = appLines.Count - originalBlock.Count; i >= 0; i--)
+            {
+                bool match = true;
+                for (int j = 0; j < originalBlock.Count; j++)
+                {
+                    if (appLines[i + j].TrimEnd() != originalBlock[j].TrimEnd())
+                    {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match)
+                {
+                    matchIndex = i;
+                    break;
+                }
+            }
+            
+            if (matchIndex != -1)
+            {
+                appLines.RemoveRange(matchIndex, originalBlock.Count);
+                appLines.InsertRange(matchIndex, newBlock);
+            }
+            else
+            {
+                failed++;
+                Console.WriteLine("Failed to match a hunk!");
+            }
+        }
+        
+        File.WriteAllLines("app_patched.js", appLines, new System.Text.UTF8Encoding(false));
+        Console.WriteLine("Failed hunks: " + failed);
+    }
+}
+"@; C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe apply_patch.cs; .\apply_patch.exe
+==================
+Set-Content debug_patch.cs @"
+using System;
+using System.IO;
+using System.Collections.Generic;
+using System.Linq;
+
+class Program
+{
+    static void Main()
+    {
+        string[] diffLines = File.ReadAllLines("diff_recovered.txt");
+        List<string> appLines = File.ReadAllLines("app.js").ToList();
+        
+        List<string> currentHunk = new List<string>();
+        List<List<string>> hunks = new List<List<string>>();
+        
+        foreach (string line in diffLines)
+        {
+            if (line.StartsWith("@@"))
+            {
+                if (currentHunk.Count > 0) hunks.Add(currentHunk);
+                currentHunk = new List<string>();
+            }
+            else if (currentHunk != null && (line.StartsWith(" ") || line.StartsWith("+") || line.StartsWith("-") || line == ""))
+            {
+                currentHunk.Add(line == "" ? " " : line);
+            }
+        }
+        if (currentHunk.Count > 0) hunks.Add(currentHunk);
+        
+        foreach (var hunk in hunks)
+        {
+            List<string> originalBlock = new List<string>();
+            foreach (var line in hunk)
+            {
+                if (line.StartsWith(" ") || line.StartsWith("-")) 
+                    originalBlock.Add(line.Substring(1));
+            }
+            
+            bool match = false;
+            for (int i = 0; i <= appLines.Count - originalBlock.Count; i++)
+            {
+                match = true;
+                for (int j = 0; j < originalBlock.Count; j++)
+                {
+                    if (appLines[i + j].TrimEnd() != originalBlock[j].TrimEnd())
+                    {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match) break;
+            }
+            
+            if (!match)
+            {
+                Console.WriteLine("Failed hunk original block first line: '" + originalBlock[0] + "'");
+                Console.WriteLine("Lines in original block: " + originalBlock.Count);
+            }
+        }
+    }
+}
+"@; C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe debug_patch.cs; .\debug_patch.exe
+==================
+Set-Content apply_patch_trim.cs @"
+using System;
+using System.IO;
+using System.Collections.Generic;
+using System.Linq;
+
+class Program
+{
+    static void Main()
+    {
+        string[] diffLines = File.ReadAllLines("diff_recovered.txt");
+        List<string> appLines = File.ReadAllLines("app.js").ToList();
+        
+        List<string> currentHunk = new List<string>();
+        List<List<string>> hunks = new List<List<string>>();
+        
+        foreach (string line in diffLines)
+        {
+            if (line.StartsWith("@@"))
+            {
+                if (currentHunk.Count > 0) hunks.Add(currentHunk);
+                currentHunk = new List<string>();
+            }
+            else if (currentHunk != null && (line.StartsWith(" ") || line.StartsWith("+") || line.StartsWith("-") || line == ""))
+            {
+                currentHunk.Add(line == "" ? " " : line);
+            }
+        }
+        if (currentHunk.Count > 0) hunks.Add(currentHunk);
+        
+        hunks.Reverse();
+        
+        int failed = 0;
+        foreach (var hunk in hunks)
+        {
+            List<string> originalBlock = new List<string>();
+            List<string> newBlock = new List<string>();
+            
+            foreach (var line in hunk)
+            {
+                if (line.StartsWith(" ") || line.StartsWith("-")) 
+                    originalBlock.Add(line.Substring(1));
+                if (line.StartsWith(" ") || line.StartsWith("+"))
+                    newBlock.Add(line.Substring(1));
+            }
+            
+            // Skip empty hunks
+            if (originalBlock.Count == 0 && newBlock.Count == 0) continue;
+            
+            int matchIndex = -1;
+            for (int i = appLines.Count - originalBlock.Count; i >= 0; i--)
+            {
+                bool match = true;
+                for (int j = 0; j < originalBlock.Count; j++)
+                {
+                    if (appLines[i + j].Trim() != originalBlock[j].Trim())
+                    {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match)
+                {
+                    matchIndex = i;
+                    break;
+                }
+            }
+            
+            if (matchIndex != -1)
+            {
+                appLines.RemoveRange(matchIndex, originalBlock.Count);
+                appLines.InsertRange(matchIndex, newBlock);
+            }
+            else
+            {
+                failed++;
+                Console.WriteLine("Failed to match hunk starting with: " + (originalBlock.Count > 0 ? originalBlock[0] : ""));
+            }
+        }
+        
+        File.WriteAllLines("app_patched.js", appLines, new System.Text.UTF8Encoding(false));
+        Console.WriteLine("Failed hunks: " + failed);
+    }
+}
+"@; C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe apply_patch_trim.cs; .\apply_patch_trim.exe
+==================
+Set-Content apply_patch_trim.cs @"
+using System;
+using System.IO;
+using System.Collections.Generic;
+using System.Linq;
+
+class Program
+{
+    static void Main()
+    {
+        string[] diffLines = File.ReadAllLines("diff_recovered.txt");
+        List<string> appLines = File.ReadAllLines("app.js").ToList();
+        
+        List<string> currentHunk = new List<string>();
+        List<List<string>> hunks = new List<List<string>>();
+        
+        foreach (string line in diffLines)
+        {
+            if (line.StartsWith("@@"))
+            {
+                if (currentHunk.Count > 0) hunks.Add(currentHunk);
+                currentHunk = new List<string>();
+            }
+            else if (currentHunk != null && currentHunk.Count >= 0 && (line.StartsWith(" ") || line.StartsWith("+") || line.StartsWith("-") || line == ""))
+            {
+                // Only add if we are inside a hunk
+                if (hunks.Count > 0 || currentHunk.Count > 0 || true)
+                {
+                    currentHunk.Add(line == "" ? " " : line);
+                }
+            }
+            else if (line.StartsWith("diff ") || line.StartsWith("index ") || line.StartsWith("--- ") || line.StartsWith("+++ "))
+            {
+                // Ignore headers
+                currentHunk.Clear();
+            }
+        }
+        if (currentHunk.Count > 0) hunks.Add(currentHunk);
+        
+        hunks.Reverse();
+        
+        int failed = 0;
+        foreach (var hunk in hunks)
+        {
+            List<string> originalBlock = new List<string>();
+            List<string> newBlock = new List<string>();
+            
+            foreach (var line in hunk)
+            {
+                if (line.StartsWith(" ") || line.StartsWith("-")) 
+                    originalBlock.Add(line.Substring(1));
+                if (line.StartsWith(" ") || line.StartsWith("+"))
+                    newBlock.Add(line.Substring(1));
+            }
+            
+            if (originalBlock.Count == 0 && newBlock.Count == 0) continue;
+            
+            int matchIndex = -1;
+            for (int i = appLines.Count - originalBlock.Count; i >= 0; i--)
+            {
+                bool match = true;
+                for (int j = 0; j < originalBlock.Count; j++)
+                {
+                    if (appLines[i + j].Trim() != originalBlock[j].Trim())
+                    {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match)
+                {
+                    matchIndex = i;
+                    break;
+                }
+            }
+            
+            if (matchIndex != -1)
+            {
+                appLines.RemoveRange(matchIndex, originalBlock.Count);
+                appLines.InsertRange(matchIndex, newBlock);
+            }
+            else
+            {
+                failed++;
+                Console.WriteLine("Failed to match hunk starting with: " + (originalBlock.Count > 0 ? originalBlock[0] : ""));
+            }
+        }
+        
+        File.WriteAllLines("app_patched.js", appLines, new System.Text.UTF8Encoding(false));
+        Console.WriteLine("Failed hunks: " + failed);
+    }
+}
+"@; C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe apply_patch_trim.cs; .\apply_patch_trim.exe
+==================
+Get-Content diff_recovered.txt | Select-String -Pattern "if \(dailyRoutineTasks.length === 0\) \{" -Context 5, 5
+==================
+Get-Content modules/08_flowchart_v4.js -Encoding UTF8 | Select-Object -First 10
+==================
+Get-Content v4.0_完成報告.md -Encoding UTF8 | Select-Object -First 10
+==================
+Set-Content extract_transcript.cs @"
+using System;
+using System.IO;
+using System.Text.RegularExpressions;
+using System.Collections.Generic;
+
+class Program
+{
+    static void Main()
+    {
+        string transcriptPath = @"..\..\brain\e0c23eb0-ebf9-4a25-8b12-766f659ee509\.system_generated\logs\transcript.jsonl";
+        if (!File.Exists(transcriptPath))
+        {
+            Console.WriteLine("Transcript not found at: " + transcriptPath);
+            return;
+        }
+
+        string[] lines = File.ReadAllLines(transcriptPath);
+        Console.WriteLine("Transcript lines: " + lines.Length);
+        
+        using (StreamWriter writer = new StreamWriter("extracted_code.txt"))
+        {
+            foreach (var line in lines)
+            {
+                if (line.Contains("\"tool_calls\"") && line.Contains("Set-Content"))
+                {
+                    writer.WriteLine("--- TOOL CALL FOUND ---");
+                    // Very simple extraction to just dump it so I can see it
+                    writer.WriteLine(line);
+                }
+            }
+        }
+        Console.WriteLine("Extracted successfully.");
+    }
+}
+"@; C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe extract_transcript.cs; .\extract_transcript.exe
+==================
+Get-Item extracted_code.txt | Select-Object Length
+==================
+Get-Content extracted_code.txt -Encoding UTF8 | Select-Object -First 30
+==================
+Get-Content ..\..\brain\e0c23eb0-ebf9-4a25-8b12-766f659ee509\.system_generated\logs\transcript_full.jsonl | Select-String -Pattern "v4.0" | Select-String -Pattern "Out-File|Set-Content|writeFileSync" | Select-Object -First 5
+==================
+Get-Content ..\..\brain\e0c23eb0-ebf9-4a25-8b12-766f659ee509\.system_generated\logs\transcript_full.jsonl | Select-String -Pattern "multi_replace_file_content" | Select-Object -First 5
+==================
+Get-Content extracted_code.txt -Encoding UTF8 | Select-String -Pattern "v4.0" -Context 2,2
+==================
+Set-Content extract_replacements.ps1 @"
+\$transcriptPath = '..\..\brain\e0c23eb0-ebf9-4a25-8b12-766f659ee509\.system_generated\logs\transcript_full.jsonl'
+\$lines = Get-Content \$transcriptPath
+
+foreach (\$line in \$lines) {
+    if (\$line -match '"name":"multi_replace_file_content"') {
+        if (\$line -match 'app\.js') {
+            # simple string splitting to find ReplacementContent
+            \$parts = \$line -split '"ReplacementContent":"'
+            for (\$i = 1; \$i -lt \$parts.Length; \$i++) {
+                \$endIndex = \$parts[\$i].IndexOf('","StartLine"')
+                if (\$endIndex -eq -1) {
+                    \$endIndex = \$parts[\$i].IndexOf('"}')
+                }
+                if (\$endIndex -gt 0) {
+                    \$content = \$parts[\$i].Substring(0, \$endIndex)
+                    # Convert JSON escaped string back to normal
+                    \$content = \$content -replace '\\
+', "`n" -replace '\\', "`r" -replace '\\"', "`"" -replace '\\\\', "\"
+                    Write-Output "--- REPLACEMENT CHUNK ---"
+                    Write-Output \$content
+                }
+            }
+        }
+    }
+}
+"@; powershell -ExecutionPolicy Bypass -File extract_replacements.ps1 | Out-File -Encoding UTF8 extracted_code.txt
+==================
+Set-Content extract_replacements.cs @"
+using System;
+using System.IO;
+
+class Program
+{
+    static void Main()
+    {
+        string transcriptPath = @"..\..\brain\e0c23eb0-ebf9-4a25-8b12-766f659ee509\.system_generated\logs\transcript_full.jsonl";
+        if (!File.Exists(transcriptPath)) return;
+
+        string[] lines = File.ReadAllLines(transcriptPath);
+        using (StreamWriter writer = new StreamWriter("extracted_code.txt"))
+        {
+            foreach (var line in lines)
+            {
+                if (line.Contains("\"name\":\"multi_replace_file_content\"") || line.Contains("\"name\":\"replace_file_content\""))
+                {
+                    if (line.Contains("app.js"))
+                    {
+                        string[] parts = line.Split(new string[] { "\"ReplacementContent\":\"" }, StringSplitOptions.None);
+                        for (int i = 1; i < parts.Length; i++)
+                        {
+                            int endIndex = parts[i].IndexOf("\",\"StartLine\"");
+                            if (endIndex == -1) endIndex = parts[i].IndexOf("\"}");
+                            if (endIndex > 0)
+                            {
+                                string content = parts[i].Substring(0, endIndex);
+                                content = content.Replace("\\
+", "\
+").Replace("\\", "\").Replace("\\\"", "\"").Replace("\\\\", "\\");
+                                writer.WriteLine("--- REPLACEMENT CHUNK ---");
+                                writer.WriteLine(content);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"@; C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe extract_replacements.cs; .\extract_replacements.exe
+==================
+Get-Item extracted_code.txt | Select-Object Length
+==================
+Get-Content extracted_code.txt -Encoding UTF8 | Select-Object -First 30
+==================
+Set-Content extract_replacements.cs @"
+using System;
+using System.IO;
+using System.Collections.Generic;
+
+class Program
+{
+    static void Main()
+    {
+        string transcriptPath = @"..\..\brain\e0c23eb0-ebf9-4a25-8b12-766f659ee509\.system_generated\logs\transcript_full.jsonl";
+        if (!File.Exists(transcriptPath)) return;
+
+        string[] lines = File.ReadAllLines(transcriptPath);
+        using (StreamWriter writer = new StreamWriter("extracted_patch.txt"))
+        {
+            foreach (var line in lines)
+            {
+                if (line.Contains("\"name\":\"multi_replace_file_content\"") || line.Contains("\"name\":\"replace_file_content\""))
+                {
+                    if (line.Contains("app.js"))
+                    {
+                        string[] targets = line.Split(new string[] { "\"TargetContent\":\"" }, StringSplitOptions.None);
+                        for (int i = 1; i < targets.Length; i++)
+                        {
+                            int endIdx = targets[i].IndexOf("\",\"ReplacementContent\"");
+                            if (endIdx > 0)
+                            {
+                                string target = targets[i].Substring(0, endIdx);
+                                target = target.Replace("\\
+", "\
+").Replace("\\", "\").Replace("\\\"", "\"").Replace("\\\\", "\\");
+                                
+                                string remain = targets[i].Substring(endIdx);
+                                int repStart = remain.IndexOf("\"ReplacementContent\":\"") + 22;
+                                if (repStart >= 22)
+                                {
+                                    int repEnd = remain.IndexOf("\",\"StartLine\"", repStart);
+                                    if (repEnd == -1) repEnd = remain.IndexOf("\"}", repStart);
+                                    
+                                    if (repEnd > 0)
+                                    {
+                                        string rep = remain.Substring(repStart, repEnd - repStart);
+                                        rep = rep.Replace("\\
+", "\
+").Replace("\\", "\").Replace("\\\"", "\"").Replace("\\\\", "\\");
+                                        
+                                        writer.WriteLine("<<<< TARGET");
+                                        writer.WriteLine(target);
+                                        writer.WriteLine("==== REPLACEMENT");
+                                        writer.WriteLine(rep);
+                                        writer.WriteLine(">>>>");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"@; C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe extract_replacements.cs; .\extract_replacements.exe
+==================
+Get-Item extracted_patch.txt | Select-Object Length
+==================
+Get-Content ..\..\brain\e0c23eb0-ebf9-4a25-8b12-766f659ee509\.system_generated\logs\transcript_full.jsonl | Select-String -Pattern "TargetContent" | Select-Object -First 1 | % { $_.ToString().Substring(0, 500) }
+==================
+Set-Content parse_json.ps1 @"
+\$transcriptPath = '..\..\brain\e0c23eb0-ebf9-4a25-8b12-766f659ee509\.system_generated\logs\transcript_full.jsonl'
+Get-Content \$transcriptPath -Encoding UTF8 | ForEach-Object {
+    if (\$_ -match '"name":"multi_replace_file_content"' -or \$_ -match '"name":"replace_file_content"') {
+        if (\$_ -match 'app\.js') {
+            try {
+                \$obj = \$_ | ConvertFrom-Json
+                foreach (\$tc in \$obj.tool_calls) {
+                    if (\$tc.name -eq 'multi_replace_file_content' -and \$tc.args.TargetFile -match 'app\.js') {
+                        foreach (\$chunk in \$tc.args.ReplacementChunks) {
+                            Write-Output "<<<< TARGET"
+                            Write-Output \$chunk.TargetContent
+                            Write-Output "==== REPLACEMENT"
+                            Write-Output \$chunk.ReplacementContent
+                            Write-Output ">>>>"
+                        }
+                    } elseif (\$tc.name -eq 'replace_file_content' -and \$tc.args.TargetFile -match 'app\.js') {
+                        Write-Output "<<<< TARGET"
+                        Write-Output \$tc.args.TargetContent
+                        Write-Output "==== REPLACEMENT"
+                        Write-Output \$tc.args.ReplacementContent
+                        Write-Output ">>>>"
+                    }
+                }
+            } catch {
+                # Ignore errors
+            }
+        }
+    }
+}
+"@; powershell -ExecutionPolicy Bypass -File parse_json.ps1 | Out-File -Encoding UTF8 extracted_patch.txt
+==================
+Set-Content parse_json.ps1 @'
+$transcriptPath = '..\..\brain\e0c23eb0-ebf9-4a25-8b12-766f659ee509\.system_generated\logs\transcript_full.jsonl'
+Get-Content $transcriptPath -Encoding UTF8 | ForEach-Object {
+    if ($_ -match '"name":"multi_replace_file_content"' -or $_ -match '"name":"replace_file_content"') {
+        if ($_ -match 'app\.js') {
+            try {
+                $obj = $_ | ConvertFrom-Json
+                foreach ($tc in $obj.tool_calls) {
+                    if ($tc.name -eq 'multi_replace_file_content' -and $tc.args.TargetFile -match 'app\.js') {
+                        foreach ($chunk in $tc.args.ReplacementChunks) {
+                            Write-Output "<<<< TARGET"
+                            Write-Output $chunk.TargetContent
+                            Write-Output "==== REPLACEMENT"
+                            Write-Output $chunk.ReplacementContent
+                            Write-Output ">>>>"
+                        }
+                    } elseif ($tc.name -eq 'replace_file_content' -and $tc.args.TargetFile -match 'app\.js') {
+                        Write-Output "<<<< TARGET"
+                        Write-Output $tc.args.TargetContent
+                        Write-Output "==== REPLACEMENT"
+                        Write-Output $tc.args.ReplacementContent
+                        Write-Output ">>>>"
+                    }
+                }
+            } catch {
+                # Ignore errors
+            }
+        }
+    }
+}
+'@; powershell -ExecutionPolicy Bypass -File parse_json.ps1 | Out-File -Encoding UTF8 extracted_patch.txt
+==================
+Get-Item extracted_patch.txt | Select-Object Length
+==================
+Get-Content extracted_patch.txt -Encoding UTF8 | Select-Object -First 30
+==================
+Get-Content app.js | Select-String -Pattern "lastLoginDate:"
+==================
+Get-Content diff_recovered.txt | Select-String -Pattern "lastLoginDate:" -Context 5, 5
+==================
+Get-Content diff_recovered.txt | Select-String -Pattern "@@ -5042,61" -Context 0, 70
+==================
+Get-Content modules/08_flowchart_v4.js -Encoding Default | Select-Object -First 10
+==================
+Get-Content extracted_code.txt -Encoding UTF8 | Select-String -Pattern "Flowchart Visualization System" -Context 0, 10

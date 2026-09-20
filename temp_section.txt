@@ -1,0 +1,146 @@
+﻿                case 'undo': typeLabel = '↩️ 撤銷'; break;
+                case 'missed': typeLabel = '⚠️ 未完成'; break;
+                default: typeLabel = entry.type;
+            }
+
+            const scoreDisplay = isVirtual ? `(${entry.score})` : `${isPositive ? '+' : ''}${entry.score}`;
+
+            // BUG-06 修復: 對可撤銷的記錄顯示撤銷按鈕
+            const canUndo = !isVirtual && !isUndo && ['completion', 'badHabit', 'persistent', 'ganttCompletion'].includes(entry.type);
+            const safeId = String(entry.id).replace(/[.']/g, '_');
+            const undoBtnHtml = canUndo
+                ? `<button onclick="undoActionLogEntry('${safeId}')" data-entry-id="${safeId}" style="font-size:0.7rem; padding:3px 7px; background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); border-radius:4px; color:var(--text-secondary); cursor:pointer;" title="撤銷此記錄">↩️ 撤銷</button>`
+                : '<span style="color:var(--text-secondary); font-size:0.7rem;">-</span>';
+
+            return `
+                <tr style="${isUndo || isVirtual ? 'opacity: 0.6;' : ''}">
+                    <td>
+                        <div>${entry.taskName} <span style="font-size:0.7em; opacity:0.7;">(${sourceLabel})</span></div>
+                        <div style="font-size:0.7rem; color:var(--text-secondary);">${typeLabel}${statusText ? ' - ' + statusText : ''}</div>
+                    </td>
+                    <td style="text-align:center; font-family:monospace; font-weight:600; color:${scoreColor}">${scoreDisplay}</td>
+                    <td style="text-align:right;">${undoBtnHtml}</td>
+                </tr>
+            `;
+        }).join('');
+ = '⚠️ 自動扣分'; break;
+                case 'badHabit': typeLabel = '❌ 壞習慣'; break;
+                case 'persistent': typeLabel = '🔁 持續加分'; break;
+                case 'ganttCompletion': typeLabel = '✅ 甘特完成'; break;
+                case 'ganttPenalty': typeLabel = '⚠️ 甘特逾期'; break;
+                case 'undo': typeLabel = '↩️ 撤銷'; break;
+                case 'missed': typeLabel = '⚠️ 未完成'; break;
+                default: typeLabel = entry.type;
+            }
+
+            const scoreDisplay = isVirtual ? `(${entry.score})` : `${isPositive ? '+' : ''}${entry.score}`;
+
+            return `
+                <tr style="${isUndo || isVirtual ? 'opacity: 0.6;' : ''}">
+                    <td>
+                        <div>${entry.taskName} <span style="font-size:0.7em; opacity:0.7;">(${sourceLabel})</span></div>
+                        <div style="font-size:0.7rem; color:var(--text-secondary);">${typeLabel}${statusText ? ' - ' + statusText : ''}</div>
+                    </td>
+                    <td style="text-align:center; font-family:monospace; font-weight:600; color:${scoreColor}">${scoreDisplay}</td>
+                    <td style="text-align:right;">-</td>
+                </tr>
+            `;
+        }).join('');
+
+        // 空記錄提示
+        const emptyRow = combinedLogs.length === 0 ? `
+            <tr>
+                <td colspan="3" style="text-align:center; color:var(--text-secondary); padding:20px;">
+                    ${targetStr} 無任何分數異動紀錄
+                </td>
+            </tr>
+        ` : '';
+
+        table.innerHTML = `
+            <thead>
+                <tr>
+                    <th>項目</th>
+                    <th style="text-align:center;">得分異動</th>
+                    <th style="text-align:right;">操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${rows}
+                ${emptyRow}
+            </tbody>
+        `;
+        els.data.tableContainer.appendChild(table);
+
+        // 甘特圖專案暫停/恢復控制面板
+        if (state.ganttSystem && state.ganttSystem.projects.length > 0) {
+            const pauseContainer = document.createElement('div');
+            pauseContainer.style.marginTop = '20px';
+            pauseContainer.style.padding = '15px';
+            pauseContainer.style.backgroundColor = 'var(--bg-secondary)';
+            pauseContainer.style.borderRadius = 'var(--radius-md)';
+
+            let projectsHtml = `
+                <h3 style="margin-bottom:10px; color:var(--text-primary); text-align:center;">甘特圖企劃狀態</h3>
+                <div style="display:flex; flex-direction:column; gap:10px;">
+            `;
+
+            state.ganttSystem.projects.forEach(proj => {
+                const isPaused = proj.isPaused;
+                projectsHtml += `
+                    <div style="display:flex; justify-content:space-between; align-items:center; background:var(--bg-primary); padding:10px; border-radius:8px;">
+                        <div>
+                            <div style="font-weight:bold;">${proj.name}</div>
+                            <div style="font-size:0.8rem; color:${isPaused ? 'var(--accent-red)' : 'var(--accent-green)'};">                                ${isPaused ? `已暫停 (自 ${proj.pauseStartDate})` : '執行中'}
+                            </div>
+                        </div>
+                        <button onclick="toggleGanttPause('${proj.id}')" class="${isPaused ? 'btn-primary' : 'btn-bad'}" style="font-size:0.8rem; padding:4px 8px;">
+                            ${isPaused ? '▶️ 恢復' : '⏸️ 暫停'}
+                        </button>
+                    </div>
+                `;
+            });
+
+            projectsHtml += `</div>`;
+            pauseContainer.innerHTML = projectsHtml;
+            els.data.tableContainer.appendChild(pauseContainer);
+        }
+    }
+}
+
+function toggleGanttPause(projId) {
+    if (!state.ganttSystem) return;
+    const proj = state.ganttSystem.projects.find(p => p.id == projId);
+    if (!proj) return;
+
+    if (proj.isPaused) {
+        // RESUME
+        const pauseStart = new Date(proj.pauseStartDate);
+        const today = new Date();
+        const todayStr = getLocalDateStr(today);
+
+        // Calculate Days Paused
+        const diffTime = today - pauseStart;
+        const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+        if (confirm(`確定要恢復企劃 [${proj.name}] 嗎？\n已暫停 ${diffDays} 天。\n該企劃所有未完成的項目日期將往後延展 ${diffDays} 天。`)) {
+
+            if (diffDays > 0) {
+                // Shift Dates Logic
+                const shiftDate = (dateStr, days) => {
+                    const d = new Date(dateStr);
+                    d.setDate(d.getDate() + days);
+                    return getLocalDateStr(d);
+                };
+
+                if (!proj.completed) {
+                    // Shift Project End Date
+                    proj.endDate = shiftDate(proj.endDate, diffDays);
+
+                    // Shift Uncompleted Children
+                    const checkItem = (item) => {
+                        if (!item.completed) {
+                            item.endDate = shiftDate(item.endDate, diffDays);
+                            item.startDate = shiftDate(item.startDate, diffDays);
+                        }
+                        if (item.children) item.children.forEach(checkItem);
+                    };

@@ -443,14 +443,30 @@ function createTaskEl(task, dateStr, showDate = false) {
         : (task.completedHistory && task.completedHistory[dateStr]);
 
     // 顯示日期（僅用於「重要事項」清單，因為那裡顯示的不一定是今日任務）
-    const dateDisplay = showDate
-        ? `<span style="color:var(--accent-blue); margin-right:4px; font-size:0.85rem;">${dateStr.slice(5)}</span>`
-        : '';
+    let dateDisplay = '';
+    if (showDate) {
+        dateDisplay = `<span style="color:var(--text-secondary); margin-right:4px; font-size:0.85rem;">${dateStr.slice(5)}</span>`;
+    }
 
     // 顯示時間（若有指定）
     const timeDisplay = task.time
         ? `<span style="color:var(--text-secondary); margin-right:6px; font-family:monospace; font-size:0.9rem;">${task.time}${task.endTime ? '-' + task.endTime : ''}</span>`
         : '';
+
+    // 顯示特殊標籤
+    let labelsDisplay = '';
+    if (task.type === 'recurring') {
+        labelsDisplay += `<span style="margin-right:4px; color:var(--accent-blue); font-size:0.7rem; border:1px solid var(--accent-blue); padding:1px 3px; border-radius:3px;">重複</span>`;
+    }
+    if (task.isMission) {
+        labelsDisplay += `<span style="margin-right:4px; color:#f59e0b; font-size:0.7rem; border:1px solid #f59e0b; padding:1px 3px; border-radius:3px;">任務性</span>`;
+    }
+    if (task.isPersistent) {
+        labelsDisplay += `<span style="margin-right:4px; color:#10b981; font-size:0.7rem; border:1px solid #10b981; padding:1px 3px; border-radius:3px;">不常出現</span>`;
+    }
+    if (task.isBadHabit) {
+        labelsDisplay += `<span style="margin-right:4px; color:var(--accent-red); font-size:0.7rem; border:1px solid var(--accent-red); padding:1px 3px; border-radius:3px;">壞習慣</span>`;
+    }
 
     // 組裝 HTML：自訂勾選框 + 任務資訊 + 操作按鈕
     el.innerHTML = `
@@ -461,7 +477,7 @@ function createTaskEl(task, dateStr, showDate = false) {
         </div>
         <div class="task-info">
             <span class="task-name" style="${isCompleted && !task.isPersistent ? 'text-decoration: line-through; opacity: 0.5;' : ''}">
-                ${dateDisplay}${timeDisplay} ${task.name}
+                ${labelsDisplay}${dateDisplay}${timeDisplay} ${task.name}
             </span>
             <div class="task-meta">
                 <span class="task-score ${task.score >= 0 ? 'positive' : 'negative'}">

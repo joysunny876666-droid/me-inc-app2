@@ -24,6 +24,11 @@
     /* Red */
     --accent-purple: #8b5cf6;
     /* Violet */
+    
+    /* Legacy variables used across the codebase */
+    --accent-blue: #3b82f6;
+    --accent-green: #10b981;
+    --accent-red: #ef4444;
 
     --border-color: #334155;
     --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
@@ -620,7 +625,7 @@ select:focus {
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 100;
+    z-index: 2000;
 }
 
 .modal.hidden {
@@ -1578,4 +1583,77 @@ select:focus {
     .chart-container.daily-progress-chart {
         margin-top: 12px;
     }
+}/* ========================================= */
+/* Flowchart UI (v4.1) */
+/* ========================================= */
+.pending-task-chip {
+    background: var(--bg-primary);
+    border: 1px solid var(--accent-blue);
+    color: var(--text-primary);
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    cursor: grab;
+    user-select: none;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.pending-task-chip:active {
+    cursor: grabbing;
+}
+.pending-task-chip:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+
+.flowchart-hour-row {
+    display: flex;
+    height: 44px;
+    box-sizing: border-box;
+    border-bottom: 1px solid var(--border-color);
+}
+.flowchart-hour-label {
+    width: 60px;
+    flex-shrink: 0;
+    text-align: center;
+    padding: 8px 4px;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    border-right: 1px solid var(--border-color);
+    background: rgba(255,255,255,0.02);
+}
+.flowchart-hour-content {
+    flex: 1;
+    padding: 4px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: flex-start;
+    min-height: 100%;
+}
+.flowchart-hour-content.drag-over {
+    background: rgba(56, 189, 248, 0.1);
+}
+
+.flowchart-task-block {
+    background: var(--accent-blue);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    transition: transform 0.1s;
+}
+.flowchart-task-block:hover {
+    transform: scale(1.02);
+}
+.ftb-time {
+    font-weight: bold;
+    font-size: 0.75rem;
+    opacity: 0.9;
+    border-right: 1px solid rgba(255,255,255,0.3);
+    padding-right: 4px;
 }
