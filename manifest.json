@@ -1,6 +1,6 @@
 {
-  "name": "Me Inc. 個人股價",
-  "short_name": "Me Inc.",
+  "name": "My App",
+  "short_name": "My App",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#0d1117",
