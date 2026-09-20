@@ -1,24 +1,49 @@
 // 模組 01: 雲端同步系統 (Cloud Sync System)
 
+// 【修復】Firebase 連線逾時保護
+// 若 10 秒內 Firebase 沒有回應，自動以本機資料啟動，避免卡在「連線中...」
+const CLOUD_TIMEOUT_MS = 10000;
+let _cloudTimeoutId = null;
+
+function _bootFromLocal(reason) {
+    if (isInitialSyncDone) return; // 已啟動，不重複執行
+    isInitialSyncDone = true;
+    console.warn(`[Cloud] Booting from local storage (${reason})`);
+    updateSyncIndicator("Offline");
+    checkDailyPenaltiesOnLoad();
+    checkImmediatePenalties();
+    fixDataAnomalies();
+    runAutomaticCleanup();
+    renderView(currentView || 'start');
+}
+
 function setupCloudSync() {
+    // 啟動逾時保護：10 秒後若還沒收到 Firebase 回應，改用本機資料啟動
+    _cloudTimeoutId = setTimeout(() => {
+        if (!isInitialSyncDone) {
+            _bootFromLocal("Firebase timeout after 10s");
+        }
+    }, CLOUD_TIMEOUT_MS);
+
     // Listen to changes in 'state' document
     try {
         if (!db) throw new Error("Firebase DB not initialized");
 
         db.collection('data').doc('state').onSnapshot((doc) => {
+            // 收到回應，清除逾時
+            if (_cloudTimeoutId) { clearTimeout(_cloudTimeoutId); _cloudTimeoutId = null; }
+
             try {
                 if (doc.exists) {
                     console.log("Cloud data received");
                     const cloudData = doc.data();
 
-                    // --- NEW: Manual Sync Mode ---
-                    // We DO NOT automatically merge or save anything anymore.
-                    // We just listen to know if cloud data is connected and updated.
+                    // --- Manual Sync Mode ---
                     const cloudUpdated = cloudData.updatedAt || 0;
                     const localUpdated = state.updatedAt || 0;
                     
                     if (cloudUpdated > localUpdated) {
-                        updateSyncIndicator("CloudNewer"); // Inform user they should probably download
+                        updateSyncIndicator("CloudNewer");
                     } else {
                         updateSyncIndicator("Synced");
                     }
@@ -27,8 +52,6 @@ function setupCloudSync() {
                     if (!isInitialSyncDone) {
                         isInitialSyncDone = true;
                         console.log("Initial Cloud Connection Established. Auto-sync disabled. User must manually sync.");
-                        
-                        // Initial Boot: Only do local calculations, don't touch cloud
                         checkDailyPenaltiesOnLoad();
                         checkImmediatePenalties();
                         fixDataAnomalies();
@@ -36,15 +59,12 @@ function setupCloudSync() {
                         renderView(currentView || 'start');
                     }
                     
-                    // We keep a reference to be able to manually fetch later if needed
                     window.lastCloudData = cloudData;
                 } else {
                     console.log("No cloud data, user must manually upload.");
                     isCloudSyncStarted = true;
                     if (!isInitialSyncDone) {
                         isInitialSyncDone = true;
-                        
-                        // Just boot local
                         checkDailyPenaltiesOnLoad();
                         checkImmediatePenalties();
                         fixDataAnomalies();
@@ -54,7 +74,6 @@ function setupCloudSync() {
                     updateSyncIndicator("Synced");
                 }
 
-                // Check and perform daily backup after initial sync
                 if (isInitialSyncDone) {
                     checkAndPerformDailyBackup().catch(err => {
                         console.error('Daily backup check failed:', err);
@@ -65,12 +84,16 @@ function setupCloudSync() {
                 updateSyncIndicator("Error");
             }
         }, (error) => {
+            if (_cloudTimeoutId) { clearTimeout(_cloudTimeoutId); _cloudTimeoutId = null; }
             console.error("Sync error:", error);
             updateSyncIndicator("Offline");
+            _bootFromLocal("Firebase onSnapshot error: " + error.code);
         });
     } catch (e) {
+        if (_cloudTimeoutId) { clearTimeout(_cloudTimeoutId); _cloudTimeoutId = null; }
         console.warn("Cloud Sync Setup Failed (Offline Mode):", e);
         updateSyncIndicator("Offline");
+        _bootFromLocal("Firebase setup exception");
     }
 }
 

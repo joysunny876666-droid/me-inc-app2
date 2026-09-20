@@ -33,7 +33,7 @@
         <!-- Start View (Dashboard) -->
         <div id="startView" class="view active">
             <header class="header">
-                <div class="logo">Me Inc. <span style="font-size: 0.6rem; opacity: 0.3;">v4.4</span></div>
+                <div class="logo">Me Inc. <span style="font-size: 0.6rem; opacity: 0.3;">v7.9</span></div>
                 
                 <div class="current-price-container" style="display: flex; align-items: center; gap: 16px;">
                     <div>
@@ -42,6 +42,8 @@
                         <span id="priceChange" class="price-change">+0.00%</span>
                     </div>
                     <div style="display: flex; flex-direction: column; gap: 4px;">
+                        <!-- 同步狀態指示器 -->
+                        <span id="syncStatusIndicator" class="sync-indicator sync-loading" style="font-size: 0.75rem; padding: 3px 8px; border-radius: 8px; text-align: center; cursor: pointer;">◌ 連線中...</span>
                         <button id="btnManualDownload" class="btn-secondary" style="font-size: 0.8rem; padding: 4px 8px;">📥 下載雲端</button>
                         <button id="btnManualUpload" class="btn-secondary" style="font-size: 0.8rem; padding: 4px 8px;">📤 覆寫雲端</button>
                     </div>
